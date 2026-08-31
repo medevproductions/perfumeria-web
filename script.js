@@ -30,7 +30,8 @@ try {
 const PRESENTATIONS = [
   { key: "plastico35", label: "Plástico 35ml", ml: 35 },
   { key: "vidrio30", label: "Vidrio 30ml", ml: 30 },
-  { key: "vidrio5060", label: "Vidrio 50-60ml", ml: 55 },
+  { key: "vidrio50", label: "Vidrio 50ml", ml: 50 },
+  { key: "vidrio60", label: "Vidrio 60ml", ml: 60 },
 ];
 const REFILL_SIZES = [
   { key: "refill30", label: "30ml", ml: 30 },
@@ -94,7 +95,7 @@ const DEFAULT_CONFIG = {
   banco: "",
   adminPassword: "admin",
   last_rates_update: "0",
-  precios: { plastico35: "9500", vidrio30: "12000", vidrio5060: "17500", refill: "8000" }, // Precios base en Bolívares (Bs.)
+  precios: { plastico35: "9500", vidrio30: "12000", vidrio50: "17500", vidrio60: "17500", refill: "8000" }, // Precios base en Bolívares (Bs.)
 };
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -413,14 +414,21 @@ function sizeLabel(mode, sizeKey) {
   return mode === "refill" ? `Recarga ${info.label}` : info.label;
 }
 
-// Precios base ahora están en Bolívares (Bs.)
+// Precios base
 function unitPriceVES(product, mode, sizeKey) {
   const key = mode === "refill" ? "refill" : sizeKey;
-  if (product && product.precios && Number(product.precios[key]) > 0) {
-    return Number(product.precios[key]);
+  if (product && product.precios) {
+    if (Number(product.precios[key]) > 0) return Number(product.precios[key]);
+    if ((key === "vidrio50" || key === "vidrio60") && Number(product.precios.vidrio5060) > 0) {
+      return Number(product.precios.vidrio5060);
+    }
   }
   if (mode === "refill") return Number(state.config.precios.refill) || 0;
-  return Number(state.config.precios[sizeKey]) || 0;
+  if (Number(state.config.precios[sizeKey]) > 0) return Number(state.config.precios[sizeKey]);
+  if ((sizeKey === "vidrio50" || sizeKey === "vidrio60") && Number(state.config.precios.vidrio5060) > 0) {
+    return Number(state.config.precios.vidrio5060);
+  }
+  return 0;
 }
 
 // Conversión a Dólares con la tasa oficial BCV
@@ -552,7 +560,8 @@ function startEditProduct(id) {
     precios: {
       plastico35: cp.plastico35 != null ? String(cp.plastico35) : "",
       vidrio30: cp.vidrio30 != null ? String(cp.vidrio30) : "",
-      vidrio5060: cp.vidrio5060 != null ? String(cp.vidrio5060) : "",
+      vidrio50: cp.vidrio50 != null ? String(cp.vidrio50) : (cp.vidrio5060 != null ? String(cp.vidrio5060) : ""),
+      vidrio60: cp.vidrio60 != null ? String(cp.vidrio60) : (cp.vidrio5060 != null ? String(cp.vidrio5060) : ""),
       refill: cp.refill != null ? String(cp.refill) : ""
     }
   };
@@ -579,7 +588,7 @@ async function saveEditProduct() {
   let cleanPrices = null;
   if (customPricesEnabled && precios) {
     cleanPrices = {};
-    ["plastico35", "vidrio30", "vidrio5060", "refill"].forEach((k) => {
+    ["plastico35", "vidrio30", "vidrio50", "vidrio60", "refill"].forEach((k) => {
       if (precios[k] && Number(precios[k]) > 0) cleanPrices[k] = precios[k];
     });
     if (Object.keys(cleanPrices).length === 0) cleanPrices = null;

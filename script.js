@@ -1339,7 +1339,7 @@ function tpl_cartsheet() {
   const disc = discountApplied();
   return `
   <div class="perf-sheet-backdrop" data-action="backdrop-close">
-    <div class="perf-sheet" onclick="event.stopPropagation()">
+    <div class="perf-sheet">
       <div class="perf-sheet-head">
         <div class="perf-sheet-title">Tu pedido</div>
         <button class="perf-iconbtn" data-action="cart-close"><i data-lucide="x" size="17"></i></button>
@@ -1443,6 +1443,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const trigger = e.target.closest("[data-action]");
     if (!trigger) return;
     const action = trigger.dataset.action;
+
+    // Si es backdrop-close, solo cerrar si el clic fue en el fondo mismo y no dentro de un elemento hijo
+    if (action === "backdrop-close" && e.target !== trigger) {
+      return;
+    }
 
     switch (action) {
       case "backdrop-close":

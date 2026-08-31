@@ -233,12 +233,16 @@ body{
   min-width: 130px;
 }
 
-/* Buscador */
+/* Buscador y Sugerencias de Autocompletado */
+.perf-search-container{
+  position: relative;
+  margin-bottom: 16px;
+  z-index: 30;
+}
 .perf-searchbox{
   position: relative;
   display: flex;
   align-items: center;
-  margin-bottom: 14px;
 }
 .perf-search-icon{
   position: absolute;
@@ -279,6 +283,76 @@ body{
   justify-content: center;
 }
 .perf-search-clear:hover{ color: #ffffff; }
+
+/* Dropdown de Sugerencias */
+.perf-suggestions-dropdown{
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: rgba(22, 34, 56, 0.98);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(16px);
+  overflow: hidden;
+  z-index: 60;
+  animation: slideDown .18s ease-out;
+}
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.perf-suggestion-item{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+  transition: background .15s ease;
+}
+.perf-suggestion-item:last-child{ border-bottom: none; }
+.perf-suggestion-item:hover, .perf-suggestion-item:active{
+  background: rgba(56, 189, 248, 0.15);
+}
+.perf-suggestion-thumb{
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  object-fit: contain;
+  background: var(--navy-dark);
+  border: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.perf-suggestion-info{
+  flex: 1;
+  min-width: 0;
+}
+.perf-suggestion-name{
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.perf-suggestion-name mark{
+  background: transparent;
+  color: var(--gold-soft);
+  font-weight: 800;
+  text-decoration: underline;
+}
+.perf-suggestion-meta{
+  font-size: 11.5px;
+  color: rgba(248, 250, 252, 0.55);
+  margin-top: 1px;
+}
+.perf-suggestion-arrow{
+  color: rgba(248, 250, 252, 0.4);
+  flex: 0 0 auto;
+}
 
 /* Botones */
 .perf-btn{

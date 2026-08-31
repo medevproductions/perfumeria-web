@@ -1338,8 +1338,8 @@ function tpl_cartsheet() {
   const t = totals();
   const disc = discountApplied();
   return `
-  <div class="perf-sheet-backdrop" data-action="cart-close">
-    <div class="perf-sheet" data-stop="1">
+  <div class="perf-sheet-backdrop" data-action="backdrop-close">
+    <div class="perf-sheet" onclick="event.stopPropagation()">
       <div class="perf-sheet-head">
         <div class="perf-sheet-title">Tu pedido</div>
         <button class="perf-iconbtn" data-action="cart-close"><i data-lucide="x" size="17"></i></button>
@@ -1440,35 +1440,16 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   app.addEventListener("click", (e) => {
-    // Si se hace clic directamente en un elemento con data-action="cart-close" (como el botón X), cerrar el carrito
-    const closeBtn = e.target.closest('[data-action="cart-close"]');
-    const sheet = e.target.closest("[data-stop]");
-    
-    if (closeBtn && !sheet) {
-      // Clic en el fondo oscuro
-      state.cartOpen = false;
-      render();
-      return;
-    }
-
-    if (closeBtn && sheet) {
-      // Clic en el botón X dentro del modal
-      state.cartOpen = false;
-      render();
-      return;
-    }
-
-    if (!closeBtn && sheet) {
-      // Clic dentro del contenido del modal
-      const trigger = e.target.closest("[data-action]");
-      if (!trigger) return;
-    }
-
     const trigger = e.target.closest("[data-action]");
     if (!trigger) return;
     const action = trigger.dataset.action;
 
     switch (action) {
+      case "backdrop-close":
+      case "cart-close":
+        state.cartOpen = false;
+        render();
+        break;
       case "nav-catalogo":
         navigateTo("catalogo");
         break;

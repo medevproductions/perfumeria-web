@@ -1,8 +1,7 @@
 // =========================================================
 // Perfumería · Catálogo & Pedidos — Con Base de Datos Firebase en la Nube
-// Precios Base en USD (Dólares fijados) y Conversión automática a Bolívares (Bs.)
-// con Tasa de Venta (Binance + Puntos configurables)
-// y Referencia en Dólares con Pop-up / Badge BCV
+// Precios Base en Bolívares (Bs.) y Conversión a Dólares con Tasa Oficial BCV
+// Puntos configurables de Spread para Tasa Binance
 // Sincronización en tiempo real para todos los clientes (Vercel & Web)
 // =========================================================
 
@@ -95,7 +94,7 @@ const DEFAULT_CONFIG = {
   banco: "",
   adminPassword: "admin",
   last_rates_update: "0",
-  precios: { plastico35: "12", vidrio30: "15", vidrio5060: "22", refill: "10" }, // Precios base en USD
+  precios: { plastico35: "9500", vidrio30: "12000", vidrio5060: "17500", refill: "8000" }, // Precios base en Bolívares (Bs.)
 };
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -138,7 +137,7 @@ let state = {
   adminSub: "tasas", // 'tasas' | 'precios' | 'inventario' | 'datos'
   config: JSON.parse(JSON.stringify(DEFAULT_CONFIG)),
   inventory: JSON.parse(JSON.stringify(INITIAL_INVENTORY)),
-  
+
   searchCatalog: "",
   searchInventory: "",
   catalogSuggestions: [],
@@ -217,7 +216,7 @@ function handleLogin() {
   const currentPass = (state.config.adminPassword || "admin").trim();
   if (entered === currentPass) {
     state.isAuthenticated = true;
-    try { sessionStorage.setItem("perfumeria_admin_auth", "true"); } catch (e) {}
+    try { sessionStorage.setItem("perfumeria_admin_auth", "true"); } catch (e) { }
     state.loginInput = "";
     state.loginError = "";
     showToast("Acceso concedido al Panel Admin");
@@ -232,7 +231,7 @@ function handleLogout() {
   state.isAuthenticated = false;
   try {
     sessionStorage.removeItem("perfumeria_admin_auth");
-  } catch (e) {}
+  } catch (e) { }
   state.loginInput = "";
   state.loginError = "";
   showToast("Sesión cerrada.");
@@ -325,7 +324,7 @@ function loadState() {
       const parsed = JSON.parse(c);
       state.config = { ...DEFAULT_CONFIG, ...parsed, precios: { ...DEFAULT_CONFIG.precios, ...(parsed.precios || {}) } };
     }
-  } catch (e) {}
+  } catch (e) { }
 
   try {
     const inv = localStorage.getItem("perfumeria_inventory");
@@ -335,14 +334,14 @@ function loadState() {
         state.inventory = parsedInv;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   try {
     const auth = sessionStorage.getItem("perfumeria_admin_auth");
     if (auth === "true") {
       state.isAuthenticated = true;
     }
-  } catch (e) {}
+  } catch (e) { }
 
   initFirebaseListeners();
   syncRouteFromHash();
@@ -353,7 +352,7 @@ function saveLocalBackup() {
   try {
     localStorage.setItem("perfumeria_config", JSON.stringify(state.config));
     localStorage.setItem("perfumeria_inventory", JSON.stringify(state.inventory));
-  } catch (e) {}
+  } catch (e) { }
 }
 
 let saveConfigTimer = null;
@@ -384,7 +383,6 @@ function binanceSpread() {
   return Number.isFinite(s) ? s : 30;
 }
 
-// Tasa de Venta = Binance + Spread (Bs.)
 function tasaVenta() {
   const binance = Number(state.config.binance) || 0;
   const spread = binanceSpread();
@@ -415,8 +413,8 @@ function sizeLabel(mode, sizeKey) {
   return mode === "refill" ? `Recarga ${info.label}` : info.label;
 }
 
-// Precio en USD configurado por el administrador
-function unitPriceUSD(product, mode, sizeKey) {
+// Precios base ahora están en Bolívares (Bs.)
+function unitPriceVES(product, mode, sizeKey) {
   const key = mode === "refill" ? "refill" : sizeKey;
   if (product && product.precios && Number(product.precios[key]) > 0) {
     return Number(product.precios[key]);
@@ -425,11 +423,11 @@ function unitPriceUSD(product, mode, sizeKey) {
   return Number(state.config.precios[sizeKey]) || 0;
 }
 
-// Precio en Bolívares = Precio USD * Tasa de Venta (Binance + Spread)
-function unitPriceVES(product, mode, sizeKey) {
-  const usd = unitPriceUSD(product, mode, sizeKey);
-  const tv = tasaVenta();
-  return usd * tv;
+// Conversión a Dólares con la tasa oficial BCV
+function unitPriceUSD(product, mode, sizeKey) {
+  const ves = unitPriceVES(product, mode, sizeKey);
+  const bcv = tasaBCV();
+  return bcv > 0 ? ves / bcv : 0;
 }
 
 function hasCustomPrices(product) {
@@ -452,11 +450,11 @@ function cartLines() {
     .map(([key, l]) => {
       const product = state.inventory.find((p) => p.id === l.productId);
       const info = sizeInfo(l.mode, l.sizeKey);
-      const unitUSD = unitPriceUSD(product, l.mode, l.sizeKey);
       const unitVES = unitPriceVES(product, l.mode, l.sizeKey);
-      const subUSD = unitUSD * l.qty;
+      const unitUSD = unitPriceUSD(product, l.mode, l.sizeKey);
       const subVES = unitVES * l.qty;
-      return { key, product, info, mode: l.mode, sizeKey: l.sizeKey, qty: l.qty, unitUSD, unitVES, subUSD, subVES };
+      const subUSD = unitUSD * l.qty;
+      return { key, product, info, mode: l.mode, sizeKey: l.sizeKey, qty: l.qty, unitVES, unitUSD, subVES, subUSD };
     })
     .filter((l) => l.product);
 }
@@ -471,12 +469,12 @@ function discountApplied() {
 
 function totals() {
   const lines = cartLines();
-  const usdRaw = lines.reduce((s, l) => s + l.subUSD, 0);
-  const usd = discountApplied() ? usdRaw * (1 - VOLUME_DISCOUNT) : usdRaw;
-  const tv = tasaVenta();
-  const ves = usd * tv;
-  const vesRaw = usdRaw * tv;
-  return { usdRaw, usd, ves, vesRaw };
+  const vesRaw = lines.reduce((s, l) => s + l.subVES, 0);
+  const ves = discountApplied() ? vesRaw * (1 - VOLUME_DISCOUNT) : vesRaw;
+  const bcv = tasaBCV();
+  const usd = bcv > 0 ? ves / bcv : 0;
+  const usdRaw = bcv > 0 ? vesRaw / bcv : 0;
+  return { vesRaw, ves, usd, usdRaw };
 }
 
 function lineKey(productId, mode, sizeKey) { return `${productId}__${mode}__${sizeKey}`; }
@@ -724,11 +722,11 @@ function buildWhatsAppMessage() {
   const t = totals();
   let msg = `*Nuevo pedido — ${state.config.negocio || "Perfumería"}*\n\n`;
   lines.forEach((l) => {
-    msg += `• ${l.product.nombre} — ${sizeLabel(l.mode, l.sizeKey)} x${l.qty} — Bs. ${fmt(l.subVES)} (≈ $${fmt(l.subUSD)})\n`;
+    msg += `• ${l.product.nombre} — ${sizeLabel(l.mode, l.sizeKey)} x${l.qty} — Bs. ${fmt(l.subVES)} (≈ $${fmt(l.subUSD)} BCV)\n`;
   });
   if (discountApplied()) msg += `\n_Descuento por volumen (3+ unidades): -20%_`;
   msg += `\n\n*Total a pagar:* Bs. ${fmt(t.ves)}`;
-  msg += `\n*Referencia en USD:* $${fmt(t.usd)}`;
+  msg += `\n*Referencia en USD (Tasa BCV):* $${fmt(t.usd)}`;
   if (state.config.banco) msg += `\n\n*Datos para el pago:*\n${state.config.banco}`;
   return msg;
 }
@@ -891,7 +889,7 @@ function tpl_login() {
 function tpl_admin() {
   const subtabs = [
     ["tasas", "Tasas"],
-    ["precios", "Precios ($ USD)"],
+    ["precios", "Precios (Bs.)"],
     ["inventario", "Inventario"],
     ["datos", "Datos & Banco"],
   ];
@@ -933,7 +931,7 @@ function tpl_admin_tasas() {
           <span class="perf-badge-live">bcv.org.ve</span>
         </label>
         <input id="cfg-bcv" class="perf-input" inputmode="decimal" placeholder="Ej: 794.99" value="${esc(state.config.bcv)}" data-action="input-config" data-field="bcv" />
-        <div class="perf-card-hint" style="margin:6px 0 0">Tasa oficial informativa del Banco Central de Venezuela.</div>
+        <div class="perf-card-hint" style="margin:6px 0 0">Tasa oficial utilizada para mostrar la referencia en dólares ($) en el catálogo y pop-up BCV.</div>
       </div>
 
       <div class="perf-field">
@@ -950,14 +948,13 @@ function tpl_admin_tasas() {
           <span class="perf-badge-live" style="color:var(--gold-soft);background:rgba(229,184,105,0.15);border-color:rgba(229,184,105,0.4)">Personalizable</span>
         </label>
         <input id="cfg-spread" class="perf-input" inputmode="decimal" placeholder="Ej: 30" value="${esc(state.config.binanceSpread != null ? state.config.binanceSpread : "30")}" data-action="input-config" data-field="binanceSpread" />
-        <div class="perf-card-hint" style="margin:6px 0 0">Puntos exactos en Bolívares que se suman a la tasa de Binance para cobrar en Bs.</div>
+        <div class="perf-card-hint" style="margin:6px 0 0">Puntos exactos en Bolívares que se le suman a la tasa Binance (Ej: 30, 40, 50...).</div>
       </div>
 
       <div class="perf-computed">
-        <span class="perf-computed-label">Tasa de venta real (Binance + ${spread} Bs.)</span>
+        <span class="perf-computed-label">Tasa de venta calculada (Binance + ${spread} Bs.)</span>
         <span class="perf-computed-value">${fmt(tv)} Bs.</span>
       </div>
-      <div class="perf-card-hint" style="margin-top:8px">Multiplicador usado para convertir los precios en USD a Bolívares en el catálogo.</div>
     </div>
 
     <div class="perf-card">
@@ -975,28 +972,28 @@ function tpl_admin_tasas() {
 }
 
 function tpl_admin_precios() {
-  const tv = tasaVenta();
+  const bcv = tasaBCV();
   return `
   <div class="perf-section">
     <div class="perf-card">
-      <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Precio base global por presentación ($ USD)</div>
-      <div class="perf-card-hint">Precios fijados en Dólares (USD). En el catálogo se convierten automáticamente a Bolívares según tu tasa de venta actual (${fmt(tv)} Bs.).</div>
+      <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Precio base global por presentación (en Bolívares - Bs.)</div>
+      <div class="perf-card-hint">Precios en Bolívares aplicados por defecto a todas las esencias. El valor en USD se calcula automáticamente con la tasa oficial BCV (${fmt(bcv)} Bs.).</div>
       <div class="perf-row2">
         ${PRESENTATIONS.map((p) => {
-          const usdVal = Number(state.config.precios[p.key]) || 0;
-          const vesVal = usdVal * tv;
-          return `
+    const vesVal = Number(state.config.precios[p.key]) || 0;
+    const usdVal = bcv > 0 ? vesVal / bcv : 0;
+    return `
           <div class="perf-field" style="min-width:45%">
-            <label class="perf-label"><span>${p.label} ($ USD)</span></label>
-            <input id="precio-${p.key}" class="perf-input" inputmode="decimal" placeholder="USD" value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
-            ${usdVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(vesVal)}</div>` : ""}
+            <label class="perf-label"><span>${p.label} (Bs.)</span></label>
+            <input id="precio-${p.key}" class="perf-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
+            ${vesVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(usdVal)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
           </div>`;
-        }).join("")}
+  }).join("")}
       </div>
       <div class="perf-field">
-        <label class="perf-label"><span>Recarga / Refill (30ml o 35ml) ($ USD)</span></label>
-        <input id="precio-refill" class="perf-input" inputmode="decimal" placeholder="USD" value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
-        ${Number(state.config.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(Number(state.config.precios.refill) * tv)}</div>` : ""}
+        <label class="perf-label"><span>Recarga / Refill (30ml o 35ml) en Bs.</span></label>
+        <input id="precio-refill" class="perf-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
+        ${Number(state.config.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(Number(state.config.precios.refill) / bcv)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
       </div>
     </div>
   </div>`;
@@ -1004,7 +1001,7 @@ function tpl_admin_precios() {
 
 function tpl_admin_inventario() {
   const ep = state.editingProd;
-  const tv = tasaVenta();
+  const bcv = tasaBCV();
   const q = normalizeStr(state.searchInventory);
   const filtered = state.inventory.filter((p) => normalizeStr(p.nombre).includes(q));
 
@@ -1046,30 +1043,30 @@ function tpl_admin_inventario() {
           <input id="editprod-file" class="perf-hidden-file" type="file" accept="image/*" data-action="upload-edit-image" />
         </div>
 
-        <!-- Sección de Precios Individuales en USD -->
+        <!-- Sección de Precios Individuales en Bs. -->
         <div class="perf-custom-prices-box">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;color:var(--gold-soft)">
             <input type="checkbox" ${ep.customPricesEnabled ? "checked" : ""} data-action="toggle-edit-custom-prices" style="accent-color:var(--gold);width:16px;height:16px" />
-            <span>💰 Personalizar precios ($ USD) para esta fragancia</span>
+            <span>💰 Personalizar precios en Bs. para esta fragancia</span>
           </label>
-          <div class="perf-card-hint" style="margin:4px 0 10px">Si está desactivado, usa los precios globales en USD configurados en la pestaña "Precios".</div>
+          <div class="perf-card-hint" style="margin:4px 0 10px">Si está desactivado, usa los precios globales en Bs. configurados en la pestaña "Precios".</div>
           
           ${ep.customPricesEnabled ? `
             <div class="perf-row2" style="margin-top:8px">
               ${PRESENTATIONS.map((p) => {
-                const usdVal = Number(ep.precios[p.key]) || 0;
-                const vesVal = usdVal * tv;
-                return `
+    const vesVal = Number(ep.precios[p.key]) || 0;
+    const usdVal = bcv > 0 ? vesVal / bcv : 0;
+    return `
                 <div class="perf-field" style="min-width:45%">
-                  <label class="perf-label"><span>${p.label} ($ USD)</span></label>
-                  <input class="perf-input" inputmode="decimal" placeholder="Global: $${state.config.precios[p.key] || '0'}" value="${esc(ep.precios[p.key] || '')}" data-action="input-editprod-price" data-field="${p.key}" />
-                  ${usdVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(vesVal)}</div>` : ""}
+                  <label class="perf-label"><span>${p.label} (Bs.)</span></label>
+                  <input class="perf-input" inputmode="decimal" placeholder="Global: ${state.config.precios[p.key] || '0'} Bs." value="${esc(ep.precios[p.key] || '')}" data-action="input-editprod-price" data-field="${p.key}" />
+                  ${vesVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(usdVal)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
                 </div>`;
-              }).join("")}
+  }).join("")}
               <div class="perf-field" style="min-width:45%">
-                <label class="perf-label"><span>Recarga / Refill ($ USD)</span></label>
-                <input class="perf-input" inputmode="decimal" placeholder="Global: $${state.config.precios.refill || '0'}" value="${esc(ep.precios.refill || '')}" data-action="input-editprod-price" data-field="refill" />
-                ${Number(ep.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(Number(ep.precios.refill) * tv)}</div>` : ""}
+                <label class="perf-label"><span>Recarga / Refill (Bs.)</span></label>
+                <input class="perf-input" inputmode="decimal" placeholder="Global: ${state.config.precios.refill || '0'} Bs." value="${esc(ep.precios.refill || '')}" data-action="input-editprod-price" data-field="refill" />
+                ${Number(ep.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(Number(ep.precios.refill) / bcv)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
               </div>
             </div>
           ` : ""}
@@ -1144,8 +1141,8 @@ function tpl_admin_inventario() {
       ` : `
         <div class="perf-prodlist">
           ${filtered.map((p) => {
-            const hasCp = hasCustomPrices(p);
-            return `
+    const hasCp = hasCustomPrices(p);
+    return `
             <div class="perf-prod">
               <div class="perf-prod-row">
                 <img class="perf-prod-thumb" src="${p.imagen || PLACEHOLDER_IMG}" alt="" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
@@ -1171,7 +1168,7 @@ function tpl_admin_inventario() {
                 <button type="button" class="perf-stock-pill" data-action="prompt-custom-stock" data-id="${p.id}">+ Cantidad...</button>
               </div>
             </div>`;
-          }).join("")}
+  }).join("")}
         </div>
       `}
     </div>
@@ -1230,18 +1227,18 @@ function tpl_catalogo() {
       ${state.showCatalogSuggestions && state.catalogSuggestions.length > 0 ? `
         <div class="perf-suggestions-dropdown">
           ${state.catalogSuggestions.map((item) => {
-            const usd = unitPriceUSD(item, "envase", PRESENTATIONS[0].key);
-            const ves = unitPriceVES(item, "envase", PRESENTATIONS[0].key);
-            return `
+    const ves = unitPriceVES(item, "envase", PRESENTATIONS[0].key);
+    const usd = unitPriceUSD(item, "envase", PRESENTATIONS[0].key);
+    return `
             <div class="perf-suggestion-item" data-action="select-catalog-suggestion" data-name="${esc(item.nombre)}">
               <img class="perf-suggestion-thumb" src="${item.imagen || PLACEHOLDER_IMG}" alt="" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
               <div class="perf-suggestion-info">
                 <div class="perf-suggestion-name">${highlightMatch(item.nombre, state.searchCatalog)}</div>
-                <div class="perf-suggestion-meta">Bs. ${fmt(ves)} (≈ $${fmt(usd)})</div>
+                <div class="perf-suggestion-meta">Bs. ${fmt(ves)} (≈ $${fmt(usd)} BCV)</div>
               </div>
               <i data-lucide="corner-down-left" class="perf-suggestion-arrow" size="14"></i>
             </div>`;
-          }).join("")}
+  }).join("")}
         </div>
       ` : ""}
     </div>
@@ -1266,21 +1263,21 @@ function tpl_catalogo() {
     ` : `
       <div class="perf-scentgrid">
         ${filtered.map((p) => {
-          const sel = getSelection(p.id);
-          const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
-          const info = sizeInfo(sel.mode, sizeKey);
-          const usd = unitPriceUSD(p, sel.mode, sizeKey);
-          const ves = unitPriceVES(p, sel.mode, sizeKey);
-          const already = mlReservedForProduct(p.id);
-          const remainingMl = p.stockMl - already;
-          return `
+    const sel = getSelection(p.id);
+    const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
+    const info = sizeInfo(sel.mode, sizeKey);
+    const ves = unitPriceVES(p, sel.mode, sizeKey);
+    const usd = unitPriceUSD(p, sel.mode, sizeKey);
+    const already = mlReservedForProduct(p.id);
+    const remainingMl = p.stockMl - already;
+    return `
           <div class="perf-scent">
             <div class="perf-scent-top">
               <img class="perf-scent-img" src="${p.imagen || PLACEHOLDER_IMG}" alt="${esc(p.nombre)}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
               <div>
                 <div class="perf-scent-name">${highlightMatch(p.nombre, state.searchCatalog)}</div>
                 <div class="perf-scent-avail">${p.stockMl}ml disponibles en esencia</div>
-                <div class="perf-scent-promo">3+ unidades en tu pedido: -20%</div>
+                <div class="perf-scent-promo">-20% a partir de 3 unidades </div>
               </div>
             </div>
 
@@ -1314,7 +1311,7 @@ function tpl_catalogo() {
               <button class="perf-btn blush" data-action="add-to-cart" data-id="${p.id}" ${info.ml > remainingMl ? "disabled" : ""}><i data-lucide="shopping-bag" size="15"></i> Agregar</button>
             </div>
           </div>`;
-        }).join("")}
+  }).join("")}
       </div>
     `}
 
@@ -1354,7 +1351,7 @@ function tpl_cartsheet() {
             <div class="perf-cartitem-top">
               <div>
                 <div class="perf-cartitem-name">${esc(l.product.nombre)}</div>
-                <div class="perf-cartitem-meta">${sizeLabel(l.mode, l.sizeKey)} · Bs. ${fmt(l.unitVES)} c/u (≈ $${fmt(l.unitUSD)})</div>
+                <div class="perf-cartitem-meta">${sizeLabel(l.mode, l.sizeKey)} · Bs. ${fmt(l.unitVES)} c/u (≈ $${fmt(l.unitUSD)} BCV)</div>
               </div>
             </div>
             <div class="perf-cartitem-bottom">
@@ -1409,7 +1406,7 @@ function render() {
     if (el) {
       el.focus();
       if (selStart != null && el.setSelectionRange) {
-        try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
+        try { el.setSelectionRange(selStart, selEnd); } catch (e) { }
       }
     }
   }
@@ -1443,9 +1440,29 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   app.addEventListener("click", (e) => {
+    // Si se hace clic directamente en un elemento con data-action="cart-close" (como el botón X), cerrar el carrito
+    const closeBtn = e.target.closest('[data-action="cart-close"]');
     const sheet = e.target.closest("[data-stop]");
-    const backdrop = e.target.closest('[data-action="cart-close"]');
-    if (backdrop && sheet) return;
+    
+    if (closeBtn && !sheet) {
+      // Clic en el fondo oscuro
+      state.cartOpen = false;
+      render();
+      return;
+    }
+
+    if (closeBtn && sheet) {
+      // Clic en el botón X dentro del modal
+      state.cartOpen = false;
+      render();
+      return;
+    }
+
+    if (!closeBtn && sheet) {
+      // Clic dentro del contenido del modal
+      const trigger = e.target.closest("[data-action]");
+      if (!trigger) return;
+    }
 
     const trigger = e.target.closest("[data-action]");
     if (!trigger) return;

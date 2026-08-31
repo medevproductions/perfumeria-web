@@ -1,10 +1,6 @@
 // =========================================================
 // Perfumería · Catálogo & Pedidos — Con Base de Datos Firebase en la Nube
 // Sincronización en tiempo real para todos los clientes (Vercel & Web)
-// Consulta de tasas:
-// - BCV Oficial directo de bcv.org.ve (794,99 Bs.)
-// - Binance USDT en Bolívares P2P (938,61 Bs.)
-// - USD a COP de Google Finance / Morningstar (3.169,59 COP)
 // =========================================================
 
 // --- Configuración de Firebase del Proyecto ---
@@ -104,7 +100,6 @@ const fmt = (n, d = 2) =>
   new Intl.NumberFormat("es-VE", { minimumFractionDigits: d, maximumFractionDigits: d }).format(Number.isFinite(n) ? n : 0);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-// Normaliza texto quitando acentos/tildes para búsquedas ultra-flexibles
 function normalizeStr(str) {
   return String(str || "")
     .normalize("NFD")
@@ -141,7 +136,7 @@ let state = {
   config: JSON.parse(JSON.stringify(DEFAULT_CONFIG)),
   inventory: JSON.parse(JSON.stringify(INITIAL_INVENTORY)),
   
-  // Búsqueda y Sugerencias de Autocompletado con debounce de 1 segundo
+  // Búsqueda y Sugerencias de Autocompletado con debounce de 1s
   searchCatalog: "",
   searchInventory: "",
   catalogSuggestions: [],
@@ -461,8 +456,8 @@ function totals() {
 function lineKey(productId, mode, sizeKey) { return `${productId}__${mode}__${sizeKey}`; }
 
 // ---------------- actions ----------------
-function updateConfigField(key, value) { state.config[key] = value; saveConfig(); render(); }
-function updatePrecioField(key, value) { state.config.precios[key] = value; saveConfig(); render(); }
+function updateConfigField(key, value) { state.config[key] = value; saveConfig(); }
+function updatePrecioField(key, value) { state.config.precios[key] = value; saveConfig(); }
 
 function handleImageFile(file) {
   if (!file) return;
@@ -498,9 +493,9 @@ async function addProduct() {
   if (db && state.isAuthenticated) {
     try {
       await db.collection("products").doc(newId).set(newProductObj);
-      showToast(`"${nombre}" guardado en Firebase en la nube`);
+      showToast(`"${nombre}" guardado en Firebase`);
     } catch (e) {
-      showToast("Error guardando en la nube: " + e.message);
+      showToast("Error guardando: " + e.message);
     }
   } else {
     state.inventory.push(newProductObj);
@@ -578,7 +573,7 @@ async function saveEditProduct() {
       await db.collection("products").doc(id).update(updatedData);
       showToast("Esencia actualizada en la nube");
     } catch (e) {
-      showToast("Error al actualizar en la nube: " + e.message);
+      showToast("Error al actualizar: " + e.message);
     }
   } else {
     const p = state.inventory.find((x) => x.id === id);
@@ -604,14 +599,14 @@ async function adjustStock(id, delta) {
   if (db && state.isAuthenticated) {
     try {
       await db.collection("products").doc(id).update({ stockMl: nextStock });
-      showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre} (Total: ${nextStock} ml)`);
+      showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre}`);
     } catch (e) {
       showToast("Error al ajustar stock en la nube");
     }
   } else {
     p.stockMl = nextStock;
     saveLocalBackup();
-    showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre} (Total: ${p.stockMl} ml)`);
+    showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre}`);
     render();
   }
 }
@@ -762,7 +757,7 @@ function handleCatalogSearchInput(val) {
     const available = state.inventory.filter((p) => p.stockMl > 0);
     const matches = available.filter((p) => normalizeStr(p.nombre).includes(q));
 
-    state.catalogSuggestions = matches.slice(0, 5); // Hasta 5 sugerencias elegantes
+    state.catalogSuggestions = matches.slice(0, 5);
     state.showCatalogSuggestions = state.catalogSuggestions.length > 0;
     render();
   }, 1000);
@@ -832,7 +827,6 @@ function tpl_header() {
       </div>
     </div>`;
   }
-  // login
   return `
   <div class="perf-header">
     <div class="perf-brand"><i data-lucide="sparkles" size="14"></i> ${esc(state.config.negocio || "Perfumería")}</div>
@@ -1538,7 +1532,6 @@ document.addEventListener("DOMContentLoaded", () => {
       state.editingProd[el.dataset.field] = el.value;
     } else if (action === "input-editprod-price" && state.editingProd) {
       state.editingProd.precios[el.dataset.field] = el.value;
-      render();
     }
   });
 

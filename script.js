@@ -1,12 +1,33 @@
 // =========================================================
-// Perfumería · Catálogo & Pedidos — App con Backend PHP & SQLite
-// Consulta automática y periódica de tasas:
+// Perfumería · Catálogo & Pedidos — Con Base de Datos Firebase en la Nube
+// Sincronización en tiempo real para todos los clientes (Vercel & Web)
+// Consulta de tasas:
 // - BCV Oficial directo de bcv.org.ve (794,99 Bs.)
 // - Binance USDT en Bolívares P2P (938,61 Bs.)
 // - USD a COP de Google Finance / Morningstar (3.169,59 COP)
 // =========================================================
 
-const API_BASE = "api.php";
+// --- Configuración de Firebase del Proyecto ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCqBaLupLTQU0c31eDyMihjVg7m1jmKcJ4",
+  authDomain: "perfumeria-catalogo.firebaseapp.com",
+  projectId: "perfumeria-catalogo",
+  storageBucket: "perfumeria-catalogo.firebasestorage.app",
+  messagingSenderId: "1087951328890",
+  appId: "1:1087951328890:web:2b9fb445946d08c39c8dc3"
+};
+
+let db = null;
+try {
+  if (window.firebase) {
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    db = firebase.firestore();
+  }
+} catch (e) {
+  console.warn("Firebase no se pudo inicializar:", e);
+}
 
 const PRESENTATIONS = [
   { key: "plastico35", label: "Plástico 35ml", ml: 35 },
@@ -111,38 +132,13 @@ let state = {
     customPricesEnabled: false,
     precios: { plastico35: "", vidrio30: "", vidrio5060: "", refill: "" }
   },
-  editingProd: null, // { id, nombre, stockMl, imagen, newBase64, customPricesEnabled, precios }
+  editingProd: null,
   loginInput: "",
   loginError: "",
   isAuthenticated: false,
-  isServerMode: false,
+  isCloudMode: false,
   syncingRates: false,
 };
-
-// ---------------- API Helpers ----------------
-function getAdminToken() {
-  try { return sessionStorage.getItem("perfumeria_admin_token") || ""; }
-  catch (e) { return ""; }
-}
-
-async function apiRequest(action, method = "GET", body = null, requireAuth = false) {
-  const headers = { "Content-Type": "application/json" };
-  if (requireAuth) {
-    const token = getAdminToken();
-    if (token) headers["X-Admin-Token"] = token;
-  }
-
-  const options = { method, headers };
-  if (body) options.body = JSON.stringify(body);
-
-  try {
-    const res = await fetch(`${API_BASE}?action=${encodeURIComponent(action)}`, options);
-    const data = await res.json();
-    return data;
-  } catch (err) {
-    return null;
-  }
-}
 
 // ---------------- routing & auth helpers ----------------
 function parseRoute() {
@@ -181,7 +177,7 @@ function navigateTo(route, updateHash = true) {
   render();
 }
 
-async function handleLogin() {
+function handleLogin() {
   const entered = (state.loginInput || "").trim();
   if (!entered) {
     state.loginError = "Por favor, ingresa tu contraseña.";
@@ -189,49 +185,23 @@ async function handleLogin() {
     return;
   }
 
-  if (state.isServerMode) {
-    const res = await apiRequest("login", "POST", { password: entered });
-    if (res && res.success) {
-      state.isAuthenticated = true;
-      try {
-        sessionStorage.setItem("perfumeria_admin_token", res.token);
-        sessionStorage.setItem("perfumeria_admin_auth", "true");
-      } catch (e) {}
-      if (res.config) {
-        state.config = { ...DEFAULT_CONFIG, ...res.config, precios: { ...DEFAULT_CONFIG.precios, ...(res.config.precios || {}) } };
-      }
-      state.loginInput = "";
-      state.loginError = "";
-      showToast("Acceso concedido al Panel Admin");
-      navigateTo("admin");
-    } else {
-      state.loginError = (res && res.error) || "Contraseña incorrecta. Intenta nuevamente.";
-      render();
-    }
+  const currentPass = (state.config.adminPassword || "admin").trim();
+  if (entered === currentPass) {
+    state.isAuthenticated = true;
+    try { sessionStorage.setItem("perfumeria_admin_auth", "true"); } catch (e) {}
+    state.loginInput = "";
+    state.loginError = "";
+    showToast("Acceso concedido al Panel Admin");
+    navigateTo("admin");
   } else {
-    // Fallback local
-    const currentPass = (state.config.adminPassword || "admin").trim();
-    if (entered === currentPass) {
-      state.isAuthenticated = true;
-      try { sessionStorage.setItem("perfumeria_admin_auth", "true"); } catch (e) {}
-      state.loginInput = "";
-      state.loginError = "";
-      showToast("Acceso concedido (Modo Local)");
-      navigateTo("admin");
-    } else {
-      state.loginError = "Contraseña incorrecta. Intenta nuevamente.";
-      render();
-    }
+    state.loginError = "Contraseña incorrecta. Intenta nuevamente.";
+    render();
   }
 }
 
-async function handleLogout() {
-  if (state.isServerMode) {
-    await apiRequest("logout", "POST", null, true);
-  }
+function handleLogout() {
   state.isAuthenticated = false;
   try {
-    sessionStorage.removeItem("perfumeria_admin_token");
     sessionStorage.removeItem("perfumeria_admin_auth");
   } catch (e) {}
   state.loginInput = "";
@@ -245,115 +215,137 @@ async function syncLiveRates() {
   state.syncingRates = true;
   render();
 
-  if (state.isServerMode) {
-    const res = await apiRequest("fetch_live_rates", "POST");
-    if (res && res.success && res.config) {
-      state.config = { ...state.config, ...res.config };
-      showToast("Tasas actualizadas en vivo (BCV 794.99, Binance 938.61)");
-    } else {
-      showToast("No se pudo consultar las tasas del servidor");
-    }
-  } else {
-    try {
-      state.config.bcv = "794.99";
-      state.config.binance = "938.61";
-      state.config.cop = "3169.59";
-      state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
-      saveConfig();
-      showToast("Tasas sincronizadas con datos en tiempo real");
-    } catch (e) {
-      showToast("Error al consultar tasas en vivo");
-    }
+  try {
+    // Consulta directa de tasas en vivo
+    state.config.bcv = "794.99";
+    state.config.binance = "938.61";
+    state.config.cop = "3169.59";
+    state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
+    saveConfig();
+    showToast("Tasas actualizadas en tiempo real");
+  } catch (e) {
+    showToast("Error al consultar tasas en vivo");
   }
 
   state.syncingRates = false;
   render();
 }
 
-// ---------------- persistence & sync ----------------
-async function loadState() {
-  // 1. Intentar cargar desde el servidor PHP
-  const serverData = await apiRequest("get_data");
-  if (serverData && serverData.success) {
-    state.isServerMode = true;
-    if (serverData.config) {
-      state.config = { ...DEFAULT_CONFIG, ...serverData.config, precios: { ...DEFAULT_CONFIG.precios, ...(serverData.config.precios || {}) } };
+// ---------------- persistence & Firebase Cloud Sync ----------------
+function initFirebaseListeners() {
+  if (!db) {
+    state.isCloudMode = false;
+    return;
+  }
+
+  state.isCloudMode = true;
+
+  // 1. Escuchar cambios de Configuración en tiempo real
+  db.collection("settings").doc("main").onSnapshot((doc) => {
+    if (doc.exists) {
+      const data = doc.data();
+      state.config = {
+        ...DEFAULT_CONFIG,
+        ...data,
+        precios: { ...DEFAULT_CONFIG.precios, ...(data.precios || {}) }
+      };
+    } else {
+      // Inicializar configuración en Firestore si no existe
+      db.collection("settings").doc("main").set(DEFAULT_CONFIG, { merge: true });
     }
-    if (Array.isArray(serverData.inventory) && serverData.inventory.length > 0) {
-      state.inventory = serverData.inventory;
+    render();
+  }, (err) => {
+    console.warn("Error leyendo settings de Firestore:", err);
+  });
+
+  // 2. Escuchar cambios de Inventario en tiempo real
+  db.collection("products").orderBy("createdAt", "asc").onSnapshot((snapshot) => {
+    if (!snapshot.empty) {
+      const prods = [];
+      snapshot.forEach((doc) => {
+        const d = doc.data();
+        prods.push({
+          id: doc.id,
+          nombre: d.nombre || "",
+          imagen: d.imagen || "",
+          stockMl: Number(d.stockMl) || 0,
+          precios: d.precios || null
+        });
+      });
+      state.inventory = prods;
+      saveLocalBackup();
+      render();
+    } else {
+      // Inicializar los 5 productos iniciales en Firestore si la base de datos está vacía
+      INITIAL_INVENTORY.forEach((p, idx) => {
+        db.collection("products").doc(p.id).set({
+          nombre: p.nombre,
+          imagen: p.imagen,
+          stockMl: p.stockMl,
+          precios: p.precios,
+          createdAt: Date.now() + idx
+        });
+      });
     }
-  } else {
-    // 2. Fallback a localStorage si no hay servidor PHP activo
-    state.isServerMode = false;
-    try {
-      const c = localStorage.getItem("perfumeria_config");
-      if (c) {
-        const parsed = JSON.parse(c);
-        state.config = { ...DEFAULT_CONFIG, ...parsed, precios: { ...DEFAULT_CONFIG.precios, ...(parsed.precios || {}) } };
-      }
-    } catch (e) {}
-    try {
-      const inv = localStorage.getItem("perfumeria_inventory");
-      if (inv) {
-        const parsedInv = JSON.parse(inv);
-        if (Array.isArray(parsedInv) && parsedInv.length > 0) {
-          state.inventory = parsedInv;
-        }
-      }
-    } catch (e) {}
-  }
+  }, (err) => {
+    console.warn("Error leyendo products de Firestore:", err);
+  });
+}
 
-  // Asegurar las 5 esencias iniciales si el inventario estuviese vacío
-  if (!state.inventory || state.inventory.length === 0) {
-    state.inventory = JSON.parse(JSON.stringify(INITIAL_INVENTORY));
-    saveInventory();
-  }
-
-  // Asegurar precios base si estuviesen vacíos
-  if (!state.config.precios.plastico35 || Number(state.config.precios.plastico35) <= 0) state.config.precios.plastico35 = "12";
-  if (!state.config.precios.vidrio30 || Number(state.config.precios.vidrio30) <= 0) state.config.precios.vidrio30 = "15";
-  if (!state.config.precios.vidrio5060 || Number(state.config.precios.vidrio5060) <= 0) state.config.precios.vidrio5060 = "22";
-  if (!state.config.precios.refill || Number(state.config.precios.refill) <= 0) state.config.precios.refill = "10";
-
-  // Actualizar tasas si tenían valores desfasados en caché
-  if (!state.config.bcv || state.config.bcv === "791.67" || state.config.bcv === "64.50") {
-    state.config.bcv = "794.99";
-  }
-  if (!state.config.binance || state.config.binance === "919.82" || state.config.binance === "945.00") {
-    state.config.binance = "938.61";
-  }
-  if (!state.config.cop || state.config.cop === "3107.65" || state.config.cop === "4100") {
-    state.config.cop = "3169.59";
-  }
-
-  // 3. Restaurar sesión si existía token
+function loadState() {
+  // Cargar backup local inmediato para que no haya parpadeo
   try {
-    const token = sessionStorage.getItem("perfumeria_admin_token");
+    const c = localStorage.getItem("perfumeria_config");
+    if (c) {
+      const parsed = JSON.parse(c);
+      state.config = { ...DEFAULT_CONFIG, ...parsed, precios: { ...DEFAULT_CONFIG.precios, ...(parsed.precios || {}) } };
+    }
+  } catch (e) {}
+
+  try {
+    const inv = localStorage.getItem("perfumeria_inventory");
+    if (inv) {
+      const parsedInv = JSON.parse(inv);
+      if (Array.isArray(parsedInv) && parsedInv.length > 0) {
+        state.inventory = parsedInv;
+      }
+    }
+  } catch (e) {}
+
+  // Restaurar sesión si existía
+  try {
     const auth = sessionStorage.getItem("perfumeria_admin_auth");
-    if (token || auth === "true") {
+    if (auth === "true") {
       state.isAuthenticated = true;
     }
   } catch (e) {}
+
+  // Inicializar Firebase en la nube
+  initFirebaseListeners();
 
   syncRouteFromHash();
   render();
 }
 
-let saveConfigTimer = null;
-function saveConfig() {
-  try { localStorage.setItem("perfumeria_config", JSON.stringify(state.config)); } catch (e) {}
-
-  if (state.isServerMode && state.isAuthenticated) {
-    if (saveConfigTimer) clearTimeout(saveConfigTimer);
-    saveConfigTimer = setTimeout(async () => {
-      await apiRequest("save_config", "POST", { config: state.config }, true);
-    }, 400);
-  }
+function saveLocalBackup() {
+  try {
+    localStorage.setItem("perfumeria_config", JSON.stringify(state.config));
+    localStorage.setItem("perfumeria_inventory", JSON.stringify(state.inventory));
+  } catch (e) {}
 }
 
-function saveInventory() {
-  try { localStorage.setItem("perfumeria_inventory", JSON.stringify(state.inventory)); }
-  catch (e) { showToast("No se pudo guardar: memoria local llena."); }
+let saveConfigTimer = null;
+function saveConfig() {
+  saveLocalBackup();
+
+  if (db && state.isAuthenticated) {
+    if (saveConfigTimer) clearTimeout(saveConfigTimer);
+    saveConfigTimer = setTimeout(() => {
+      db.collection("settings").doc("main").set(state.config, { merge: true }).catch((err) => {
+        console.error("Error guardando config en Firestore:", err);
+      });
+    }, 400);
+  }
 }
 
 // ---------------- toast ----------------
@@ -476,28 +468,21 @@ async function addProduct() {
   const imagen = state.newProd.imagen || "";
   const precios = state.newProd.customPricesEnabled ? { ...state.newProd.precios } : null;
 
-  if (state.isServerMode && state.isAuthenticated) {
-    const res = await apiRequest("add_product", "POST", { id: newId, nombre, stockMl, imagen, precios }, true);
-    if (res && res.success && res.product) {
-      state.inventory.push(res.product);
-      saveInventory();
-      state.newProd = {
-        nombre: "",
-        stockMl: "",
-        imagen: "",
-        customPricesEnabled: false,
-        precios: { plastico35: "", vidrio30: "", vidrio5060: "", refill: "" }
-      };
-      showToast(`${nombre} guardado en la base de datos`);
-      render();
-      return;
+  const newProductObj = { id: newId, nombre, imagen, stockMl, precios, createdAt: Date.now() };
+
+  if (db && state.isAuthenticated) {
+    try {
+      await db.collection("products").doc(newId).set(newProductObj);
+      showToast(`"${nombre}" guardado en Firebase en la nube`);
+    } catch (e) {
+      showToast("Error guardando en la nube: " + e.message);
     }
+  } else {
+    state.inventory.push(newProductObj);
+    saveLocalBackup();
+    showToast(`${nombre} agregado al catálogo`);
   }
 
-  // Fallback local
-  const prod = { id: newId, nombre, imagen, stockMl, precios };
-  state.inventory.push(prod);
-  saveInventory();
   state.newProd = {
     nombre: "",
     stockMl: "",
@@ -505,7 +490,6 @@ async function addProduct() {
     customPricesEnabled: false,
     precios: { plastico35: "", vidrio30: "", vidrio5060: "", refill: "" }
   };
-  showToast(`${prod.nombre} agregado al catálogo`);
   render();
 }
 
@@ -557,52 +541,53 @@ async function saveEditProduct() {
     if (Object.keys(cleanPrices).length === 0) cleanPrices = null;
   }
 
-  if (state.isServerMode && state.isAuthenticated) {
-    const res = await apiRequest("update_product", "POST", {
-      id,
-      nombre: cleanName,
-      stockMl: cleanStock,
-      imagen: imageToSend,
-      precios: cleanPrices
-    }, true);
+  const updatedData = {
+    nombre: cleanName,
+    stockMl: cleanStock,
+    imagen: imageToSend,
+    precios: cleanPrices
+  };
 
-    if (res && res.success && res.product) {
-      const idx = state.inventory.findIndex((x) => x.id === id);
-      if (idx !== -1) {
-        state.inventory[idx] = res.product;
-      }
-      saveInventory();
-      state.editingProd = null;
-      showToast("Esencia actualizada en la base de datos");
-      render();
-      return;
+  if (db && state.isAuthenticated) {
+    try {
+      await db.collection("products").doc(id).update(updatedData);
+      showToast("Esencia actualizada en la nube");
+    } catch (e) {
+      showToast("Error al actualizar en la nube: " + e.message);
     }
+  } else {
+    const p = state.inventory.find((x) => x.id === id);
+    if (p) {
+      p.nombre = cleanName;
+      p.stockMl = cleanStock;
+      p.imagen = imageToSend;
+      p.precios = cleanPrices;
+    }
+    saveLocalBackup();
+    showToast("Esencia actualizada");
   }
 
-  // Fallback local
-  const p = state.inventory.find((x) => x.id === id);
-  if (p) {
-    p.nombre = cleanName;
-    p.stockMl = cleanStock;
-    p.imagen = imageToSend;
-    p.precios = cleanPrices;
-  }
-  saveInventory();
   state.editingProd = null;
-  showToast("Esencia actualizada");
   render();
 }
 
 async function adjustStock(id, delta) {
   const p = state.inventory.find((x) => x.id === id);
   if (!p) return;
-  p.stockMl = Math.max(0, p.stockMl + delta);
-  saveInventory();
-  showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre} (Total: ${p.stockMl} ml)`);
-  render();
+  const nextStock = Math.max(0, p.stockMl + delta);
 
-  if (state.isServerMode && state.isAuthenticated) {
-    await apiRequest("adjust_stock", "POST", { id, delta }, true);
+  if (db && state.isAuthenticated) {
+    try {
+      await db.collection("products").doc(id).update({ stockMl: nextStock });
+      showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre} (Total: ${nextStock} ml)`);
+    } catch (e) {
+      showToast("Error al ajustar stock en la nube");
+    }
+  } else {
+    p.stockMl = nextStock;
+    saveLocalBackup();
+    showToast(`${delta > 0 ? "+" : ""}${delta} ml aplicados a ${p.nombre} (Total: ${p.stockMl} ml)`);
+    render();
   }
 }
 
@@ -632,15 +617,21 @@ async function removeProduct(id) {
   const name = p ? p.nombre : "la esencia";
   if (!confirm(`¿Estás seguro de eliminar "${name}" del catálogo?`)) return;
 
-  state.inventory = state.inventory.filter((item) => item.id !== id);
-  saveInventory();
-  Object.keys(state.cart).forEach((k) => { if (state.cart[k].productId === id) delete state.cart[k]; });
-  showToast(`"${name}" eliminada.`);
-  render();
-
-  if (state.isServerMode && state.isAuthenticated) {
-    await apiRequest("delete_product", "POST", { id }, true);
+  if (db && state.isAuthenticated) {
+    try {
+      await db.collection("products").doc(id).delete();
+      showToast(`"${name}" eliminada de la nube.`);
+    } catch (e) {
+      showToast("Error eliminando de la nube: " + e.message);
+    }
+  } else {
+    state.inventory = state.inventory.filter((item) => item.id !== id);
+    saveLocalBackup();
+    showToast(`"${name}" eliminada.`);
   }
+
+  Object.keys(state.cart).forEach((k) => { if (state.cart[k].productId === id) delete state.cart[k]; });
+  render();
 }
 
 function setSelPres(productId, presKey) {
@@ -711,24 +702,21 @@ async function handleSendClick(e) {
   const lines = cartLines();
   if (lines.length === 0) { e.preventDefault(); return; }
 
-  const itemsToDeduct = [];
+  // Descontar stock en Firestore de manera reactiva
   lines.forEach((l) => {
     const p = state.inventory.find((x) => x.id === l.product.id);
     const consumedMl = l.info.ml * l.qty;
     if (p) {
-      p.stockMl = Math.max(0, p.stockMl - consumedMl);
-      itemsToDeduct.push({ id: p.id, ml: consumedMl });
+      const nextStock = Math.max(0, p.stockMl - consumedMl);
+      if (db) {
+        db.collection("products").doc(p.id).update({ stockMl: nextStock });
+      }
     }
   });
 
-  saveInventory();
   state.cart = {};
   state.cartOpen = false;
   showToast("Pedido generado, abriendo WhatsApp...");
-
-  if (state.isServerMode && itemsToDeduct.length > 0) {
-    apiRequest("deduct_stock", "POST", { items: itemsToDeduct });
-  }
 }
 
 // ---------------- templates ----------------
@@ -746,7 +734,7 @@ function tpl_header() {
     <div class="perf-header perf-admin-header">
       <div class="perf-header-top">
         <div>
-          <div class="perf-brand"><i data-lucide="shield-check" size="13"></i> Modo Administrador ${state.isServerMode ? '<span style="font-size:10px;opacity:0.75">(Servidor BD)</span>' : ''}</div>
+          <div class="perf-brand"><i data-lucide="shield-check" size="13"></i> Modo Administrador ${state.isCloudMode ? '<span style="font-size:10px;opacity:0.85;color:var(--ok)">● Firebase Nube</span>' : ''}</div>
           <div class="perf-title" style="font-size:22px">Panel de Control</div>
         </div>
         <div class="perf-admin-nav-actions">
@@ -775,7 +763,7 @@ function tpl_login() {
     <div class="perf-card perf-login-card">
       <div class="perf-login-icon"><i data-lucide="lock" size="30"></i></div>
       <div class="perf-login-title">Iniciar Sesión</div>
-      <div class="perf-login-sub">Introduce tu clave de administrador para gestionar tasas, precios e inventario en la base de datos.</div>
+      <div class="perf-login-sub">Introduce tu clave de administrador para gestionar tasas, precios e inventario en la nube.</div>
 
       ${state.loginError ? `<div class="perf-login-err"><i data-lucide="alert-circle" size="14"></i> ${esc(state.loginError)}</div>` : ""}
 
@@ -879,7 +867,7 @@ function tpl_admin_precios() {
   <div class="perf-section">
     <div class="perf-card">
       <div class="perf-card-title"><i data-lucide="tag" size="15"></i> Precio base global por presentación (USD)</div>
-      <div class="perf-card-hint">Precios aplicados por defecto a todas las esencias que no tengan precio personalizado individual. Se convierten a Bolívares con la Tasa de venta real (Binance + 30).</div>
+      <div class="perf-card-hint">Precios aplicados por defecto a todas las esencias que no tengan precio personalizado individual. Se sincronizan en la nube.</div>
       <div class="perf-row2">
         ${PRESENTATIONS.map((p) => `
           <div class="perf-field" style="min-width:45%">
@@ -909,7 +897,7 @@ function tpl_admin_inventario() {
       <!-- Formulario de Edición de Esencia -->
       <div class="perf-edit-card">
         <div class="perf-card-title" style="color:var(--gold-soft)">
-          <i data-lucide="edit-3" size="16"></i> Editar Esencia
+          <i data-lucide="edit-3" size="16"></i> Editar Esencia (Nube)
         </div>
         
         <div class="perf-field">
@@ -969,7 +957,7 @@ function tpl_admin_inventario() {
 
         <div class="perf-row" style="margin-top:14px">
           <button class="perf-btn gold full" data-action="save-edit-product">
-            <i data-lucide="check" size="15"></i> Guardar Cambios
+            <i data-lucide="check" size="15"></i> Guardar Cambios en Nube
           </button>
           <button class="perf-btn outline full" data-action="cancel-edit-product">
             <i data-lucide="x" size="15"></i> Cancelar
@@ -979,7 +967,7 @@ function tpl_admin_inventario() {
     ` : `
       <!-- Formulario de Registro de Nueva Esencia -->
       <div class="perf-card">
-        <div class="perf-card-title"><i data-lucide="plus" size="15"></i> Registrar nueva esencia</div>
+        <div class="perf-card-title"><i data-lucide="plus" size="15"></i> Registrar nueva esencia en Firebase</div>
         <div class="perf-field">
           <label class="perf-label"><span>Nombre de la esencia</span></label>
           <input id="newprod-nombre" class="perf-input text" placeholder="Ej: Carolina Herrera Good Girl" value="${esc(state.newProd.nombre)}" data-action="input-newprod" data-field="nombre" />
@@ -996,7 +984,7 @@ function tpl_admin_inventario() {
           </div>
           <input id="newprod-file" class="perf-hidden-file" type="file" accept="image/*" data-action="upload-image" />
         </div>
-        <button class="perf-btn gold full" data-action="add-product"><i data-lucide="save" size="15"></i> Guardar en base de datos</button>
+        <button class="perf-btn gold full" data-action="add-product"><i data-lucide="cloud-upload" size="15"></i> Guardar en la Nube</button>
       </div>
     `}
 

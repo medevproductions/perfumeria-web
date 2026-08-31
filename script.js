@@ -1,5 +1,7 @@
 // =========================================================
 // Perfumería · Catálogo & Pedidos — Con Base de Datos Firebase en la Nube
+// Precios Base en Bolívares (Bs.) y Conversión a Dólares con Tasa Oficial BCV
+// Puntos configurables de Spread para Tasa Binance
 // Sincronización en tiempo real para todos los clientes (Vercel & Web)
 // =========================================================
 
@@ -36,7 +38,6 @@ const REFILL_SIZES = [
 ];
 const VOLUME_QTY = 3;
 const VOLUME_DISCOUNT = 0.2;
-const BINANCE_SPREAD = 30; // puntos (Bs) fijos por encima de Binance
 const MAX_IMG_BYTES = 3.5 * 1024 * 1024; // 3.5MB por imagen
 
 const PLACEHOLDER_IMG =
@@ -86,13 +87,14 @@ const INITIAL_INVENTORY = [
 const DEFAULT_CONFIG = {
   bcv: "794.99",
   binance: "938.61",
+  binanceSpread: "30", // Puntos personalizables sobre la tasa Binance
   cop: "3169.59",
   whatsapp: "",
   negocio: "Perfumería",
   banco: "",
   adminPassword: "admin",
   last_rates_update: "0",
-  precios: { plastico35: "12", vidrio30: "15", vidrio5060: "22", refill: "10" },
+  precios: { plastico35: "9500", vidrio30: "12000", vidrio5060: "17500", refill: "8000" }, // Precios base en Bolívares (Bs.)
 };
 
 const uid = () => (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
@@ -136,7 +138,6 @@ let state = {
   config: JSON.parse(JSON.stringify(DEFAULT_CONFIG)),
   inventory: JSON.parse(JSON.stringify(INITIAL_INVENTORY)),
   
-  // Búsqueda y Sugerencias de Autocompletado con debounce de 1s
   searchCatalog: "",
   searchInventory: "",
   catalogSuggestions: [],
@@ -377,9 +378,20 @@ function showToast(msg) {
 }
 
 // ---------------- computed helpers ----------------
+function binanceSpread() {
+  const s = parseFloat(state.config.binanceSpread);
+  return Number.isFinite(s) ? s : 30;
+}
+
 function tasaVenta() {
   const binance = Number(state.config.binance) || 0;
-  return binance > 0 ? binance + BINANCE_SPREAD : 0;
+  const spread = binanceSpread();
+  return binance > 0 ? binance + spread : 0;
+}
+
+function tasaBCV() {
+  const bcv = Number(state.config.bcv) || 0;
+  return bcv > 0 ? bcv : 794.99;
 }
 
 function copPreview() {
@@ -401,13 +413,21 @@ function sizeLabel(mode, sizeKey) {
   return mode === "refill" ? `Recarga ${info.label}` : info.label;
 }
 
-function unitPriceUSD(product, mode, sizeKey) {
+// Precios base ahora están en Bolívares (Bs.)
+function unitPriceVES(product, mode, sizeKey) {
   const key = mode === "refill" ? "refill" : sizeKey;
   if (product && product.precios && Number(product.precios[key]) > 0) {
     return Number(product.precios[key]);
   }
   if (mode === "refill") return Number(state.config.precios.refill) || 0;
   return Number(state.config.precios[sizeKey]) || 0;
+}
+
+// Conversión a Dólares con la tasa oficial BCV
+function unitPriceUSD(product, mode, sizeKey) {
+  const ves = unitPriceVES(product, mode, sizeKey);
+  const bcv = tasaBCV();
+  return bcv > 0 ? ves / bcv : 0;
 }
 
 function hasCustomPrices(product) {
@@ -430,9 +450,11 @@ function cartLines() {
     .map(([key, l]) => {
       const product = state.inventory.find((p) => p.id === l.productId);
       const info = sizeInfo(l.mode, l.sizeKey);
-      const unit = unitPriceUSD(product, l.mode, l.sizeKey);
-      const subUSD = unit * l.qty;
-      return { key, product, info, mode: l.mode, sizeKey: l.sizeKey, qty: l.qty, unit, subUSD };
+      const unitVES = unitPriceVES(product, l.mode, l.sizeKey);
+      const unitUSD = unitPriceUSD(product, l.mode, l.sizeKey);
+      const subVES = unitVES * l.qty;
+      const subUSD = unitUSD * l.qty;
+      return { key, product, info, mode: l.mode, sizeKey: l.sizeKey, qty: l.qty, unitVES, unitUSD, subVES, subUSD };
     })
     .filter((l) => l.product);
 }
@@ -447,10 +469,12 @@ function discountApplied() {
 
 function totals() {
   const lines = cartLines();
-  const usdRaw = lines.reduce((s, l) => s + l.subUSD, 0);
-  const usd = discountApplied() ? usdRaw * (1 - VOLUME_DISCOUNT) : usdRaw;
-  const ves = usd * tasaVenta();
-  return { usdRaw, usd, ves };
+  const vesRaw = lines.reduce((s, l) => s + l.subVES, 0);
+  const ves = discountApplied() ? vesRaw * (1 - VOLUME_DISCOUNT) : vesRaw;
+  const bcv = tasaBCV();
+  const usd = bcv > 0 ? ves / bcv : 0;
+  const usdRaw = bcv > 0 ? vesRaw / bcv : 0;
+  return { vesRaw, ves, usd, usdRaw };
 }
 
 function lineKey(productId, mode, sizeKey) { return `${productId}__${mode}__${sizeKey}`; }
@@ -698,11 +722,11 @@ function buildWhatsAppMessage() {
   const t = totals();
   let msg = `*Nuevo pedido — ${state.config.negocio || "Perfumería"}*\n\n`;
   lines.forEach((l) => {
-    msg += `• ${l.product.nombre} — ${sizeLabel(l.mode, l.sizeKey)} x${l.qty} — $${fmt(l.subUSD)}\n`;
+    msg += `• ${l.product.nombre} — ${sizeLabel(l.mode, l.sizeKey)} x${l.qty} — Bs. ${fmt(l.subVES)} (≈ $${fmt(l.subUSD)} BCV)\n`;
   });
   if (discountApplied()) msg += `\n_Descuento por volumen (3+ unidades): -20%_`;
-  msg += `\n\n*Total USD:* $${fmt(t.usd)}`;
-  msg += `\n*Total VES:* Bs. ${fmt(t.ves)}`;
+  msg += `\n\n*Total a pagar:* Bs. ${fmt(t.ves)}`;
+  msg += `\n*Referencia en USD (Tasa BCV):* $${fmt(t.usd)}`;
   if (state.config.banco) msg += `\n\n*Datos para el pago:*\n${state.config.banco}`;
   return msg;
 }
@@ -752,7 +776,6 @@ function handleCatalogSearchInput(val) {
     return;
   }
 
-  // Esperar exactamente 1 segundo (1000ms) desde que el usuario deja de escribir
   catalogDebounceTimer = setTimeout(() => {
     const available = state.inventory.filter((p) => p.stockMl > 0);
     const matches = available.filter((p) => normalizeStr(p.nombre).includes(q));
@@ -866,7 +889,7 @@ function tpl_login() {
 function tpl_admin() {
   const subtabs = [
     ["tasas", "Tasas"],
-    ["precios", "Precios"],
+    ["precios", "Precios (Bs.)"],
     ["inventario", "Inventario"],
     ["datos", "Datos & Banco"],
   ];
@@ -884,6 +907,8 @@ function tpl_admin() {
 function tpl_admin_tasas() {
   const tv = tasaVenta();
   const cp = copPreview();
+  const spread = binanceSpread();
+
   return `
   <div class="perf-section">
     <div class="perf-rates-syncbar">
@@ -898,15 +923,15 @@ function tpl_admin_tasas() {
     </div>
 
     <div class="perf-card">
-      <div class="perf-card-title"><i data-lucide="droplet" class="perf-drop" size="16"></i> Tasa de venta real</div>
+      <div class="perf-card-title"><i data-lucide="droplet" class="perf-drop" size="16"></i> Tasas de Cambio &amp; Margen</div>
       
       <div class="perf-field">
         <label class="perf-label">
-          <span>Tasa BCV (USD Oficial)</span>
+          <span>Tasa BCV Oficial (USD en Bs.)</span>
           <span class="perf-badge-live">bcv.org.ve</span>
         </label>
         <input id="cfg-bcv" class="perf-input" inputmode="decimal" placeholder="Ej: 794.99" value="${esc(state.config.bcv)}" data-action="input-config" data-field="bcv" />
-        <div class="perf-card-hint" style="margin:6px 0 0">Tasa oficial publicada en el portal oficial del Banco Central de Venezuela.</div>
+        <div class="perf-card-hint" style="margin:6px 0 0">Tasa oficial utilizada para mostrar la referencia en dólares ($) en el catálogo y pop-up BCV.</div>
       </div>
 
       <div class="perf-field">
@@ -915,14 +940,21 @@ function tpl_admin_tasas() {
           <span class="perf-badge-live">P2P Binance</span>
         </label>
         <input id="cfg-binance" class="perf-input" inputmode="decimal" placeholder="Ej: 938.61" value="${esc(state.config.binance)}" data-action="input-config" data-field="binance" />
-        <div class="perf-card-hint" style="margin:6px 0 0">Precio de mercado P2P para órdenes en Bs. (Banesco / Pago Móvil).</div>
+      </div>
+
+      <div class="perf-field">
+        <label class="perf-label">
+          <span>Puntos a sumar sobre Binance (Bs.)</span>
+          <span class="perf-badge-live" style="color:var(--gold-soft);background:rgba(229,184,105,0.15);border-color:rgba(229,184,105,0.4)">Personalizable</span>
+        </label>
+        <input id="cfg-spread" class="perf-input" inputmode="decimal" placeholder="Ej: 30" value="${esc(state.config.binanceSpread != null ? state.config.binanceSpread : "30")}" data-action="input-config" data-field="binanceSpread" />
+        <div class="perf-card-hint" style="margin:6px 0 0">Puntos exactos en Bolívares que se le suman a la tasa Binance (Ej: 30, 40, 50...).</div>
       </div>
 
       <div class="perf-computed">
-        <span class="perf-computed-label">Tasa de venta real (Binance +30 Bs.)</span>
+        <span class="perf-computed-label">Tasa de venta calculada (Binance + ${spread} Bs.)</span>
         <span class="perf-computed-value">${fmt(tv)} Bs.</span>
       </div>
-      <div class="perf-card-hint" style="margin-top:10px">Esta tasa se calcula automáticamente (Binance + 30) para convertir los precios de catálogo a Bolívares.</div>
     </div>
 
     <div class="perf-card">
@@ -934,30 +966,34 @@ function tpl_admin_tasas() {
         </label>
         <input id="cfg-cop" class="perf-input" inputmode="decimal" placeholder="Ej: 3169.59" value="${esc(state.config.cop)}" data-action="input-config" data-field="cop" />
       </div>
-      ${cp ? `<div class="perf-card-hint" style="margin:0">1.000 COP ≈ $${fmt(cp.usd, 4)} USD${cp.ves != null ? ` ≈ Bs. ${fmt(cp.ves)}` : ""} (según Google Finance &amp; Binance)</div>` : ""}
+      ${cp ? `<div class="perf-card-hint" style="margin:0">1.000 COP ≈ $${fmt(cp.usd, 4)} USD${cp.ves != null ? ` ≈ Bs. ${fmt(cp.ves)}` : ""}</div>` : ""}
     </div>
   </div>`;
 }
 
 function tpl_admin_precios() {
-  const tv = tasaVenta();
+  const bcv = tasaBCV();
   return `
   <div class="perf-section">
     <div class="perf-card">
-      <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Precio base global por presentación (USD)</div>
-      <div class="perf-card-hint">Precios aplicados por defecto a todas las esencias que no tengan precio personalizado individual. Se sincronizan en la nube.</div>
+      <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Precio base global por presentación (en Bolívares - Bs.)</div>
+      <div class="perf-card-hint">Precios en Bolívares aplicados por defecto a todas las esencias. El valor en USD se calcula automáticamente con la tasa oficial BCV (${fmt(bcv)} Bs.).</div>
       <div class="perf-row2">
-        ${PRESENTATIONS.map((p) => `
+        ${PRESENTATIONS.map((p) => {
+          const vesVal = Number(state.config.precios[p.key]) || 0;
+          const usdVal = bcv > 0 ? vesVal / bcv : 0;
+          return `
           <div class="perf-field" style="min-width:45%">
-            <label class="perf-label"><span>${p.label}</span></label>
-            <input id="precio-${p.key}" class="perf-input" inputmode="decimal" placeholder="USD" value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
-            ${tv > 0 && Number(state.config.precios[p.key]) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(Number(state.config.precios[p.key]) * tv)}</div>` : ""}
-          </div>`).join("")}
+            <label class="perf-label"><span>${p.label} (Bs.)</span></label>
+            <input id="precio-${p.key}" class="perf-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
+            ${vesVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(usdVal)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
+          </div>`;
+        }).join("")}
       </div>
       <div class="perf-field">
-        <label class="perf-label"><span>Recarga / Refill (30ml o 35ml)</span></label>
-        <input id="precio-refill" class="perf-input" inputmode="decimal" placeholder="USD" value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
-        ${tv > 0 && Number(state.config.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(Number(state.config.precios.refill) * tv)}</div>` : ""}
+        <label class="perf-label"><span>Recarga / Refill (30ml o 35ml) en Bs.</span></label>
+        <input id="precio-refill" class="perf-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
+        ${Number(state.config.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(Number(state.config.precios.refill) / bcv)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
       </div>
     </div>
   </div>`;
@@ -965,7 +1001,7 @@ function tpl_admin_precios() {
 
 function tpl_admin_inventario() {
   const ep = state.editingProd;
-  const tv = tasaVenta();
+  const bcv = tasaBCV();
   const q = normalizeStr(state.searchInventory);
   const filtered = state.inventory.filter((p) => normalizeStr(p.nombre).includes(q));
 
@@ -1007,27 +1043,30 @@ function tpl_admin_inventario() {
           <input id="editprod-file" class="perf-hidden-file" type="file" accept="image/*" data-action="upload-edit-image" />
         </div>
 
-        <!-- Sección de Precios Individuales -->
+        <!-- Sección de Precios Individuales en Bs. -->
         <div class="perf-custom-prices-box">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;color:var(--gold-soft)">
             <input type="checkbox" ${ep.customPricesEnabled ? "checked" : ""} data-action="toggle-edit-custom-prices" style="accent-color:var(--gold);width:16px;height:16px" />
-            <span>💰 Personalizar precios para esta fragancia</span>
+            <span>💰 Personalizar precios en Bs. para esta fragancia</span>
           </label>
-          <div class="perf-card-hint" style="margin:4px 0 10px">Si está desactivado, usa los precios globales configurados en la pestaña "Precios".</div>
+          <div class="perf-card-hint" style="margin:4px 0 10px">Si está desactivado, usa los precios globales en Bs. configurados en la pestaña "Precios".</div>
           
           ${ep.customPricesEnabled ? `
             <div class="perf-row2" style="margin-top:8px">
-              ${PRESENTATIONS.map((p) => `
+              ${PRESENTATIONS.map((p) => {
+                const vesVal = Number(ep.precios[p.key]) || 0;
+                const usdVal = bcv > 0 ? vesVal / bcv : 0;
+                return `
                 <div class="perf-field" style="min-width:45%">
-                  <label class="perf-label"><span>${p.label} ($ USD)</span></label>
-                  <input class="perf-input" inputmode="decimal" placeholder="Global: $${state.config.precios[p.key] || '0'}" value="${esc(ep.precios[p.key] || '')}" data-action="input-editprod-price" data-field="${p.key}" />
-                  ${tv > 0 && Number(ep.precios[p.key]) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(Number(ep.precios[p.key]) * tv)}</div>` : ""}
-                </div>
-              `).join("")}
+                  <label class="perf-label"><span>${p.label} (Bs.)</span></label>
+                  <input class="perf-input" inputmode="decimal" placeholder="Global: ${state.config.precios[p.key] || '0'} Bs." value="${esc(ep.precios[p.key] || '')}" data-action="input-editprod-price" data-field="${p.key}" />
+                  ${vesVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(usdVal)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
+                </div>`;
+              }).join("")}
               <div class="perf-field" style="min-width:45%">
-                <label class="perf-label"><span>Recarga / Refill ($ USD)</span></label>
-                <input class="perf-input" inputmode="decimal" placeholder="Global: $${state.config.precios.refill || '0'}" value="${esc(ep.precios.refill || '')}" data-action="input-editprod-price" data-field="refill" />
-                ${tv > 0 && Number(ep.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ Bs. ${fmt(Number(ep.precios.refill) * tv)}</div>` : ""}
+                <label class="perf-label"><span>Recarga / Refill (Bs.)</span></label>
+                <input class="perf-input" inputmode="decimal" placeholder="Global: ${state.config.precios.refill || '0'} Bs." value="${esc(ep.precios.refill || '')}" data-action="input-editprod-price" data-field="refill" />
+                ${Number(ep.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(Number(ep.precios.refill) / bcv)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
               </div>
             </div>
           ` : ""}
@@ -1173,7 +1212,6 @@ function tpl_catalogo() {
   const catalog = state.inventory.filter((p) => p.stockMl > 0);
   const q = normalizeStr(state.searchCatalog);
   const filtered = catalog.filter((p) => normalizeStr(p.nombre).includes(q));
-  const tv = tasaVenta();
 
   return `
   <div class="perf-section">
@@ -1189,14 +1227,14 @@ function tpl_catalogo() {
       ${state.showCatalogSuggestions && state.catalogSuggestions.length > 0 ? `
         <div class="perf-suggestions-dropdown">
           ${state.catalogSuggestions.map((item) => {
-            const unit = unitPriceUSD(item, "envase", PRESENTATIONS[0].key);
-            const ves = unit * tv;
+            const ves = unitPriceVES(item, "envase", PRESENTATIONS[0].key);
+            const usd = unitPriceUSD(item, "envase", PRESENTATIONS[0].key);
             return `
             <div class="perf-suggestion-item" data-action="select-catalog-suggestion" data-name="${esc(item.nombre)}">
               <img class="perf-suggestion-thumb" src="${item.imagen || PLACEHOLDER_IMG}" alt="" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
               <div class="perf-suggestion-info">
                 <div class="perf-suggestion-name">${highlightMatch(item.nombre, state.searchCatalog)}</div>
-                <div class="perf-suggestion-meta">Desde Bs. ${fmt(ves)} ($${fmt(unit)})</div>
+                <div class="perf-suggestion-meta">Bs. ${fmt(ves)} (≈ $${fmt(usd)} BCV)</div>
               </div>
               <i data-lucide="corner-down-left" class="perf-suggestion-arrow" size="14"></i>
             </div>`;
@@ -1228,8 +1266,8 @@ function tpl_catalogo() {
           const sel = getSelection(p.id);
           const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
           const info = sizeInfo(sel.mode, sizeKey);
-          const unit = unitPriceUSD(p, sel.mode, sizeKey);
-          const ves = unit * tv;
+          const ves = unitPriceVES(p, sel.mode, sizeKey);
+          const usd = unitPriceUSD(p, sel.mode, sizeKey);
           const already = mlReservedForProduct(p.id);
           const remainingMl = p.stockMl - already;
           return `
@@ -1260,7 +1298,11 @@ function tpl_catalogo() {
             <div class="perf-scent-price-row">
               <div>
                 <div class="perf-scent-price-ves">Bs. ${fmt(ves)}</div>
-                <div class="perf-scent-price-usd">$${fmt(unit)} · ${sizeLabel(sel.mode, sizeKey)}</div>
+                <div class="perf-scent-price-usd">
+                  <span>≈ $${fmt(usd)}</span>
+                  <span class="perf-bcv-badge" title="Tasa oficial Banco Central de Venezuela">BCV</span>
+                  <span style="margin-left:5px;opacity:0.65">· ${sizeLabel(sel.mode, sizeKey)}</span>
+                </div>
               </div>
             </div>
 
@@ -1309,7 +1351,7 @@ function tpl_cartsheet() {
             <div class="perf-cartitem-top">
               <div>
                 <div class="perf-cartitem-name">${esc(l.product.nombre)}</div>
-                <div class="perf-cartitem-meta">${sizeLabel(l.mode, l.sizeKey)} · Bs. ${fmt(l.unit * tasaVenta())} c/u</div>
+                <div class="perf-cartitem-meta">${sizeLabel(l.mode, l.sizeKey)} · Bs. ${fmt(l.unitVES)} c/u (≈ $${fmt(l.unitUSD)} BCV)</div>
               </div>
             </div>
             <div class="perf-cartitem-bottom">
@@ -1318,14 +1360,14 @@ function tpl_cartsheet() {
                 <span>${l.qty}</span>
                 <button data-action="cart-qty" data-key="${l.key}" data-delta="1"><i data-lucide="plus" size="14"></i></button>
               </div>
-              <div class="perf-cartitem-sub">Bs. ${fmt(l.subUSD * tasaVenta())}</div>
+              <div class="perf-cartitem-sub">Bs. ${fmt(l.subVES)}</div>
             </div>
           </div>`).join("")}
       </div>
       <div class="perf-sheet-foot">
-        ${disc ? `<div class="perf-total-row"><span>Subtotal antes de descuento</span><span>$${fmt(t.usdRaw)}</span></div>` : ""}
+        ${disc ? `<div class="perf-total-row"><span>Subtotal antes de descuento</span><span>Bs. ${fmt(t.vesRaw)}</span></div>` : ""}
         <div class="perf-total-row main"><span>Total a pagar</span><span>Bs. ${fmt(t.ves)}</span></div>
-        <div class="perf-total-row"><span>Equivalente en USD</span><span>$${fmt(t.usd)}</span></div>
+        <div class="perf-total-row"><span>Referencia en USD</span><span>$${fmt(t.usd)} <span class="perf-bcv-badge">BCV</span></span></div>
         <a class="perf-btn gold full" style="margin-top:12px;text-decoration:none" href="${buildWhatsAppUrl()}" target="_blank" rel="noopener noreferrer" data-action="send-whatsapp">
           <i data-lucide="send" size="16"></i> Enviar pedido por WhatsApp
         </a>

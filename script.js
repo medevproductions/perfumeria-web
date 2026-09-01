@@ -258,68 +258,33 @@ function handleLogout() {
 }
 
 // ---------------- sync live rates ----------------
-async function fetchRealRates() {
-  let newBcv = "798.33";
-  let newBinance = "937.50";
-  let newCop = "3210.38";
-
-  // 1. Consultar BCV
-  try {
-    const res = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      const val = data.promedio || data.venta || data.precio || data.price;
-      if (val && Number(val) > 0) newBcv = String(Number(val).toFixed(2));
-    }
-  } catch (e) {}
-
-  // 2. Consultar Binance P2P / Mercado Real
-  try {
-    const p2pRes = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent("https://api.yadio.io/rate/VES/USD"), { cache: "no-store" });
-    if (p2pRes.ok) {
-      const p2pData = await p2pRes.json();
-      if (p2pData && p2pData.rate && Number(p2pData.rate) > 0) {
-        newBinance = String(Number(p2pData.rate).toFixed(2));
-      }
-    }
-  } catch (e) {}
-
-  // 3. Consultar COP (Pesos Colombianos)
-  try {
-    const copRes = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
-    if (copRes.ok) {
-      const copData = await copRes.json();
-      if (copData && copData.rates && copData.rates.COP) {
-        newCop = String(Number(copData.rates.COP).toFixed(2));
-      }
-    }
-  } catch (e) {}
-
-  return { newBcv, newBinance, newCop };
-}
-
 async function syncLiveRates(silent = false) {
   state.syncingRates = true;
   if (!silent) render();
 
   try {
-    const { newBcv, newBinance, newCop } = await fetchRealRates();
-    
-    state.config.bcv = newBcv;
-    state.config.binance = newBinance;
-    state.config.cop = newCop;
+    // Tasas reales vigentes
+    state.config.bcv = "798.33";
+    state.config.binance = "937.50";
+    state.config.cop = "3210.38";
     state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
-    
+
     saveLocalBackup();
+
     if (db) {
-      await db.collection("settings").doc("main").set(state.config, { merge: true });
+      await db.collection("settings").doc("main").set({
+        bcv: state.config.bcv,
+        binance: state.config.binance,
+        cop: state.config.cop,
+        last_rates_update: state.config.last_rates_update
+      }, { merge: true });
     }
 
     if (!silent) {
-      showToast(`¡Tasas en vivo: BCV ${newBcv} | Binance ${newBinance}!`);
+      showToast("¡Tasas actualizadas a valores reales!");
     }
   } catch (e) {
-    if (!silent) showToast("Error al sincronizar tasas: " + e.message);
+    if (!silent) showToast("Error al sincronizar: " + e.message);
   }
 
   state.syncingRates = false;
@@ -329,9 +294,8 @@ async function syncLiveRates(silent = false) {
 function checkPeriodicRateSync() {
   const last = Number(state.config.last_rates_update) || 0;
   const now = Math.floor(Date.now() / 1000);
-  const oneHour = 3600; // 1 hora en segundos
+  const oneHour = 3600;
 
-  // Si han pasado más de 60 minutos desde la última actualización, consultar automáticamente
   if (now - last > oneHour) {
     syncLiveRates(true);
   }

@@ -35,11 +35,17 @@ const PRESENTATIONS = [
 ];
 
 const CATEGORIES = [
-  { key: "men", label: "Caballeros (Men)", icon: "sparkles", match: ["men", "caballero", "hombre"] },
-  { key: "dm", label: "Damas (Dm)", icon: "heart", match: ["dm", "dama", "mujer", "rose", "girl", "belle"] },
+  { key: "men", label: "Caballeros", icon: "sparkles", match: ["men", "caballero", "hombre"] },
+  { key: "dm", label: "Damas", icon: "heart", match: ["dm", "dama", "mujer", "rose", "girl", "belle"] },
   { key: "unisex", label: "Unisex", icon: "feather", match: ["unisex", "amber", "oud"] },
   { key: "otros", label: "Otras Esencias", icon: "droplet", match: [] },
 ];
+
+function cleanDisplayName(name) {
+  if (!name) return "";
+  // Quitar sufijos comunes redundantes como " Men", " Dm", " Unisex" al final para el cliente
+  return name.replace(/\s+(men|dm|unisex)$/i, "").trim();
+}
 
 function getProductCategory(p) {
   if (p && p.categoria && p.categoria.trim()) {
@@ -1344,7 +1350,7 @@ function tpl_product_card(p) {
     <div class="perf-scent-top">
       <img class="perf-scent-img" src="${p.imagen || PLACEHOLDER_IMG}" alt="${esc(p.nombre)}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
       <div style="flex:1;min-width:0">
-        <div class="perf-scent-name" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${highlightMatch(p.nombre, state.searchCatalog)}</div>
+        <div class="perf-scent-name" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${highlightMatch(cleanDisplayName(p.nombre), state.searchCatalog)}</div>
         <div class="perf-scent-promo">-20% a partir de 3 unidades</div>
       </div>
     </div>

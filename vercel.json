@@ -3,6 +3,10 @@
   "cleanUrls": true,
   "routes": [
     {
+      "src": "/api/rates",
+      "dest": "/api/rates.js"
+    },
+    {
       "src": "/uploads/(.*)",
       "dest": "/uploads/$1"
     },

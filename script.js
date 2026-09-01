@@ -253,7 +253,23 @@ async function fetchRealRates() {
   let newBinance = null;
   let newCop = null;
 
-  // 1. Consultar Tasa Oficial BCV
+  // 1. Intentar consultar endpoint Backend Vercel (obtiene Binance P2P directo sin bloqueo de navegador)
+  try {
+    const resApi = await fetch("/api/rates", { cache: "no-store" });
+    if (resApi.ok) {
+      const dataApi = await resApi.json();
+      if (dataApi.success) {
+        if (dataApi.bcv) newBcv = String(dataApi.bcv);
+        if (dataApi.binance) newBinance = String(dataApi.binance);
+        if (dataApi.cop) newCop = String(dataApi.cop);
+        return { newBcv, newBinance, newCop };
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudo consultar /api/rates, usando fuentes directas:", e);
+  }
+
+  // 2. Fallback Directo de BCV Oficial
   try {
     const res = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
     if (res.ok) {
@@ -264,19 +280,7 @@ async function fetchRealRates() {
     }
   } catch (e) {}
 
-  if (!newBcv) {
-    try {
-      const res = await fetch("https://pydolarve.org/api/v1/dollar?page=bcv", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.monitors && data.monitors.usd && data.monitors.usd.price) {
-          newBcv = String(Number(data.monitors.usd.price).toFixed(2));
-        }
-      }
-    } catch (e) {}
-  }
-
-  // 2. Consultar Tasa Binance USDT en Bs. / Paralelo
+  // 3. Fallback Directo Binance P2P / Paralelo
   try {
     const res = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: "no-store" });
     if (res.ok) {
@@ -287,19 +291,7 @@ async function fetchRealRates() {
     }
   } catch (e) {}
 
-  if (!newBinance) {
-    try {
-      const res = await fetch("https://api.yadio.io/rate/VES/USD", { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.rate) {
-          newBinance = String(Number(data.rate).toFixed(2));
-        }
-      }
-    } catch (e) {}
-  }
-
-  // 3. Consultar Tasa COP (USD a COP)
+  // 4. Fallback Directo COP (Google / Open Exchange)
   try {
     const res = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
     if (res.ok) {

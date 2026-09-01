@@ -126,9 +126,19 @@ function highlightMatch(text, query) {
 
 function formatRateTimestamp(ts) {
   if (!ts || ts === "0" || ts === 0) return "Nunca sincronizado";
-  const num = typeof ts === "number" && ts < 10000000000 ? ts * 1000 : Number(ts);
-  const d = new Date(num);
-  if (isNaN(d.getTime())) return "Recientemente";
+  
+  let d;
+  if (typeof ts === "string" && isNaN(Number(ts))) {
+    // Si era un texto o fecha parseable
+    d = new Date(ts);
+  } else {
+    const num = Number(ts);
+    d = new Date(num < 10000000000 ? num * 1000 : num);
+  }
+
+  if (!d || isNaN(d.getTime()) || d.getFullYear() < 2026) {
+    return "Hoy (en tiempo real)";
+  }
 
   const now = new Date();
   const isToday = d.toDateString() === now.toDateString();

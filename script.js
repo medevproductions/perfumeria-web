@@ -33,6 +33,26 @@ const PRESENTATIONS = [
   { key: "vidrio50", label: "Vidrio 50ml", ml: 50 },
   { key: "vidrio60", label: "Vidrio 60ml", ml: 60 },
 ];
+
+const CATEGORIES = [
+  { key: "men", label: "Caballeros (Men)", icon: "sparkles", match: ["men", "caballero", "hombre"] },
+  { key: "dm", label: "Damas (Dm)", icon: "heart", match: ["dm", "dama", "mujer", "rose", "girl", "belle"] },
+  { key: "unisex", label: "Unisex", icon: "feather", match: ["unisex", "amber", "oud"] },
+  { key: "otros", label: "Otras Esencias", icon: "droplet", match: [] },
+];
+
+function getProductCategory(p) {
+  if (p && p.categoria && p.categoria.trim()) {
+    return p.categoria.trim().toLowerCase();
+  }
+  // Detección inteligente por nombre
+  const nameLower = (p && p.nombre ? p.nombre : "").toLowerCase().trim();
+  const lastWord = nameLower.split(" ").pop();
+  if (lastWord === "dm" || nameLower.includes(" dm") || nameLower.includes("dama")) return "dm";
+  if (lastWord === "men" || nameLower.includes(" men") || nameLower.includes("caballero")) return "men";
+  if (lastWord === "unisex" || nameLower.includes("unisex")) return "unisex";
+  return "otros";
+}
 const REFILL_SIZES = [
   { key: "refill30", label: "30ml", ml: 30 },
   { key: "refill35", label: "35ml", ml: 35 },
@@ -336,6 +356,7 @@ function initFirebaseListeners() {
         prods.push({
           id: doc.id,
           nombre: d.nombre || "",
+          categoria: d.categoria || getProductCategory({ nombre: d.nombre }),
           imagen: d.imagen || "",
           stockMl: Number(d.stockMl) || 0,
           precios: d.precios || null
@@ -564,9 +585,10 @@ async function addProduct() {
   const nombre = state.newProd.nombre.trim();
   const stockMl = Number(state.newProd.stockMl);
   const imagen = state.newProd.imagen || "";
+  const categoria = state.newProd.categoria || getProductCategory({ nombre });
   const precios = state.newProd.customPricesEnabled ? { ...state.newProd.precios } : null;
 
-  const newProductObj = { id: newId, nombre, imagen, stockMl, precios, createdAt: Date.now() };
+  const newProductObj = { id: newId, nombre, imagen, categoria, stockMl, precios, createdAt: Date.now() };
 
   if (db && state.isAuthenticated) {
     try {
@@ -583,10 +605,11 @@ async function addProduct() {
 
   state.newProd = {
     nombre: "",
+    categoria: "men",
     stockMl: "",
     imagen: "",
     customPricesEnabled: false,
-    precios: { plastico35: "", vidrio30: "", vidrio5060: "", refill: "" }
+    precios: { plastico35: "", vidrio30: "", vidrio50: "", vidrio60: "", refill: "" }
   };
   render();
 }
@@ -599,6 +622,7 @@ function startEditProduct(id) {
   state.editingProd = {
     id: p.id,
     nombre: p.nombre,
+    categoria: p.categoria || getProductCategory(p),
     stockMl: String(p.stockMl),
     imagen: p.imagen || "",
     newBase64: "",
@@ -621,7 +645,7 @@ function cancelEditProduct() {
 
 async function saveEditProduct() {
   if (!state.editingProd) return;
-  const { id, nombre, stockMl, imagen, newBase64, customPricesEnabled, precios } = state.editingProd;
+  const { id, nombre, categoria, stockMl, imagen, newBase64, customPricesEnabled, precios } = state.editingProd;
   const cleanName = (nombre || "").trim();
   const cleanStock = parseInt(stockMl, 10);
 
@@ -642,6 +666,7 @@ async function saveEditProduct() {
 
   const updatedData = {
     nombre: cleanName,
+    categoria: categoria || getProductCategory({ nombre: cleanName }),
     stockMl: cleanStock,
     imagen: imageToSend,
     precios: cleanPrices
@@ -649,21 +674,18 @@ async function saveEditProduct() {
 
   if (db && state.isAuthenticated) {
     try {
-      await db.collection("products").doc(id).update(updatedData);
-      showToast("Esencia actualizada en la nube");
+      await db.collection("products").doc(id).set(updatedData, { merge: true });
+      showToast("Cambios guardados con éxito");
     } catch (e) {
-      showToast("Error al actualizar: " + e.message);
+      showToast("Error actualizando: " + e.message);
     }
   } else {
-    const p = state.inventory.find((x) => x.id === id);
-    if (p) {
-      p.nombre = cleanName;
-      p.stockMl = cleanStock;
-      p.imagen = imageToSend;
-      p.precios = cleanPrices;
+    const idx = state.inventory.findIndex((x) => x.id === id);
+    if (idx !== -1) {
+      state.inventory[idx] = { ...state.inventory[idx], ...updatedData };
+      saveLocalBackup();
+      showToast("Producto actualizado");
     }
-    saveLocalBackup();
-    showToast("Esencia actualizada");
   }
 
   state.editingProd = null;
@@ -1103,18 +1125,26 @@ function tpl_admin_inventario() {
           <input id="editprod-nombre" class="perf-input text" placeholder="Nombre" value="${esc(ep.nombre)}" data-action="input-editprod" data-field="nombre" />
         </div>
 
-        <div class="perf-field">
-          <label class="perf-label"><span>Stock total en mililitros (ml)</span></label>
-          <input id="editprod-stockml" class="perf-input" inputmode="numeric" placeholder="Ej: 500" value="${esc(ep.stockMl)}" data-action="input-editprod" data-field="stockMl" />
-          <div style="margin-top:6px">
-            <span style="font-size:11.5px;color:rgba(248,250,252,0.55)">Sumar ml rápidamente:</span>
-            <div class="perf-quick-add-group">
-              <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="10">+10 ml</button>
-              <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="50">+50 ml</button>
-              <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="100">+100 ml</button>
-              <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="250">+250 ml</button>
-              <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="500">+500 ml</button>
-            </div>
+        <div class="perf-row">
+          <div class="perf-field" style="flex:1">
+            <label class="perf-label"><span>Categoría de fragancia</span></label>
+            <select class="perf-input text" data-action="input-editprod" data-field="categoria" style="padding:10px 12px;cursor:pointer">
+              ${CATEGORIES.map((c) => `<option value="${c.key}" ${ep.categoria === c.key ? "selected" : ""}>${c.label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="perf-field" style="flex:1">
+            <label class="perf-label"><span>Stock total (ml)</span></label>
+            <input id="editprod-stockml" class="perf-input" inputmode="numeric" placeholder="Ej: 500" value="${esc(ep.stockMl)}" data-action="input-editprod" data-field="stockMl" />
+          </div>
+        </div>
+        <div style="margin:-6px 0 12px">
+          <span style="font-size:11.5px;color:rgba(248,250,252,0.55)">Sumar ml rápidamente:</span>
+          <div class="perf-quick-add-group">
+            <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="10">+10 ml</button>
+            <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="50">+50 ml</button>
+            <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="100">+100 ml</button>
+            <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="250">+250 ml</button>
+            <button type="button" class="perf-quick-add-btn" data-action="add-stock-edit" data-amount="500">+500 ml</button>
           </div>
         </div>
 
@@ -1173,9 +1203,17 @@ function tpl_admin_inventario() {
           <label class="perf-label"><span>Nombre de la esencia</span></label>
           <input id="newprod-nombre" class="perf-input text" placeholder="Ej: Carolina Herrera Good Girl" value="${esc(state.newProd.nombre)}" data-action="input-newprod" data-field="nombre" />
         </div>
-        <div class="perf-field">
-          <label class="perf-label"><span>Mililitros de esencia iniciales (ml)</span></label>
-          <input id="newprod-stockml" class="perf-input" inputmode="numeric" placeholder="Ej: 500" value="${esc(state.newProd.stockMl)}" data-action="input-newprod" data-field="stockMl" />
+        <div class="perf-row">
+          <div class="perf-field" style="flex:1">
+            <label class="perf-label"><span>Categoría</span></label>
+            <select class="perf-input text" data-action="input-newprod" data-field="categoria" style="padding:10px 12px;cursor:pointer">
+              ${CATEGORIES.map((c) => `<option value="${c.key}" ${state.newProd.categoria === c.key ? "selected" : ""}>${c.label}</option>`).join("")}
+            </select>
+          </div>
+          <div class="perf-field" style="flex:1">
+            <label class="perf-label"><span>Stock inicial (ml)</span></label>
+            <input id="newprod-stockml" class="perf-input" inputmode="numeric" placeholder="Ej: 500" value="${esc(state.newProd.stockMl)}" data-action="input-newprod" data-field="stockMl" />
+          </div>
         </div>
         <div class="perf-field">
           <label class="perf-label"><span>Imagen de referencia</span></label>
@@ -1292,18 +1330,80 @@ function tpl_admin_datos() {
   </div>`;
 }
 
+function tpl_product_card(p) {
+  const sel = getSelection(p.id);
+  const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
+  const info = sizeInfo(sel.mode, sizeKey);
+  const ves = unitPriceVES(p, sel.mode, sizeKey);
+  const usd = unitPriceUSD(p, sel.mode, sizeKey);
+  const already = mlReservedForProduct(p.id);
+  const remainingMl = p.stockMl - already;
+
+  return `
+  <div class="perf-carousel-card">
+    <div class="perf-scent-top">
+      <img class="perf-scent-img" src="${p.imagen || PLACEHOLDER_IMG}" alt="${esc(p.nombre)}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
+      <div style="flex:1;min-width:0">
+        <div class="perf-scent-name" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${highlightMatch(p.nombre, state.searchCatalog)}</div>
+        <div class="perf-scent-promo">-20% a partir de 3 unidades</div>
+      </div>
+    </div>
+
+    <div class="perf-chiprow" style="margin-top:10px">
+      ${PRESENTATIONS.map((pr) => `
+        <button class="perf-chip ${sel.mode === "envase" && sel.presKey === pr.key ? "active" : ""}" ${pr.ml > p.stockMl ? "disabled" : ""} data-action="select-pres" data-id="${p.id}" data-pres="${pr.key}">${pr.label}</button>
+      `).join("")}
+      <button class="perf-chip ${sel.mode === "refill" ? "active" : ""}" data-action="select-refill-toggle" data-id="${p.id}">Recarga / Refill</button>
+    </div>
+
+    ${sel.mode === "refill" ? `
+      <div class="perf-chiprow" style="margin-top:6px">
+        ${REFILL_SIZES.map((r) => `
+          <button class="perf-chip ${sel.refillKey === r.key ? "active" : ""}" ${r.ml > p.stockMl ? "disabled" : ""} data-action="select-refill-size" data-id="${p.id}" data-refill="${r.key}">${r.label}</button>
+        `).join("")}
+      </div>` : ""}
+
+    <div class="perf-scent-price-row" style="margin-top:10px">
+      <div>
+        <div class="perf-scent-price-ves" style="font-size:18px">Bs. ${fmt(ves)}</div>
+        <div class="perf-scent-price-usd">
+          <span>≈ $${fmt(usd)}</span>
+          <span class="perf-bcv-badge" title="Tasa oficial Banco Central de Venezuela">BCV</span>
+          <span style="margin-left:4px;opacity:0.65">· ${sizeLabel(sel.mode, sizeKey)}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="perf-scent-bottom" style="margin-top:10px">
+      <div class="perf-card-hint" style="margin:0;font-size:11px">Quedan ${remainingMl}ml disponibles</div>
+      <button class="perf-btn blush sm" data-action="add-to-cart" data-id="${p.id}" ${info.ml > remainingMl ? "disabled" : ""} style="padding:7px 14px"><i data-lucide="shopping-bag" size="14"></i> Agregar</button>
+    </div>
+  </div>`;
+}
+
 function tpl_catalogo() {
   const catalog = state.inventory.filter((p) => p.stockMl > 0);
   const q = normalizeStr(state.searchCatalog);
   const filtered = catalog.filter((p) => normalizeStr(p.nombre).includes(q));
 
+  // Agrupar por categoría
+  const groups = { men: [], dm: [], unisex: [], otros: [] };
+  filtered.forEach((p) => {
+    const cat = getProductCategory(p);
+    if (groups[cat]) {
+      groups[cat].push(p);
+    } else {
+      groups.otros.push(p);
+    }
+  });
+
   return `
-  <div class="perf-section">
-    <!-- Buscador en Catálogo Cliente con Autocompletado (1s de espera) -->
+  <!-- Buscador Estático Sticky con Transparencia y Blur detrás -->
+  <div class="perf-sticky-search">
     <div class="perf-search-container">
       <div class="perf-searchbox">
         <i data-lucide="search" class="perf-search-icon" size="16"></i>
-        <input type="text" id="catalog-search-input" class="perf-search-input" placeholder="Buscar perfume o fragancia..." value="${esc(state.searchCatalog)}" data-action="input-search-catalog" autocomplete="off" />
+        <input type="text" id="catalog-search-input" class="perf-search-input" placeholder="Buscar fragancia o marca..." value="${esc(state.searchCatalog)}" data-action="input-search-catalog" autocomplete="off" />
         ${state.searchCatalog ? `<button class="perf-search-clear" data-action="clear-search-catalog" title="Borrar búsqueda"><i data-lucide="x" size="14"></i></button>` : ""}
       </div>
 
@@ -1326,7 +1426,9 @@ function tpl_catalogo() {
         </div>
       ` : ""}
     </div>
+  </div>
 
+  <div class="perf-section">
     ${catalog.length === 0 ? `
       <div class="perf-card">
         <div class="perf-empty">
@@ -1345,57 +1447,27 @@ function tpl_catalogo() {
         </div>
       </div>
     ` : `
-      <div class="perf-scentgrid">
-        ${filtered.map((p) => {
-    const sel = getSelection(p.id);
-    const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
-    const info = sizeInfo(sel.mode, sizeKey);
-    const ves = unitPriceVES(p, sel.mode, sizeKey);
-    const usd = unitPriceUSD(p, sel.mode, sizeKey);
-    const already = mlReservedForProduct(p.id);
-    const remainingMl = p.stockMl - already;
-    return `
-          <div class="perf-scent">
-            <div class="perf-scent-top">
-              <img class="perf-scent-img" src="${p.imagen || PLACEHOLDER_IMG}" alt="${esc(p.nombre)}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
-              <div>
-                <div class="perf-scent-name">${highlightMatch(p.nombre, state.searchCatalog)}</div>
-                <div class="perf-scent-promo">-20% a partir de 3 unidades</div>
-              </div>
+      <!-- Carruseles agrupados por Categorías -->
+      ${CATEGORIES.map((cat) => {
+        const items = groups[cat.key] || [];
+        if (items.length === 0) return "";
+        return `
+        <div class="perf-category-section">
+          <div class="perf-category-header">
+            <div class="perf-category-title">
+              <i data-lucide="${cat.icon}" size="18"></i>
+              <span>${cat.label}</span>
             </div>
+            <span class="perf-category-badge">${items.length} ${items.length === 1 ? "esencia" : "esencias"}</span>
+          </div>
 
-            <div class="perf-chiprow">
-              ${PRESENTATIONS.map((pr) => `
-                <button class="perf-chip ${sel.mode === "envase" && sel.presKey === pr.key ? "active" : ""}" ${pr.ml > p.stockMl ? "disabled" : ""} data-action="select-pres" data-id="${p.id}" data-pres="${pr.key}">${pr.label}</button>
-              `).join("")}
-              <button class="perf-chip ${sel.mode === "refill" ? "active" : ""}" data-action="select-refill-toggle" data-id="${p.id}">Recarga / Refill</button>
+          <div class="perf-carousel-wrapper">
+            <div class="perf-carousel-track">
+              ${items.map((p) => tpl_product_card(p)).join("")}
             </div>
-
-            ${sel.mode === "refill" ? `
-              <div class="perf-chiprow" style="margin-top:6px">
-                ${REFILL_SIZES.map((r) => `
-                  <button class="perf-chip ${sel.refillKey === r.key ? "active" : ""}" ${r.ml > p.stockMl ? "disabled" : ""} data-action="select-refill-size" data-id="${p.id}" data-refill="${r.key}">${r.label}</button>
-                `).join("")}
-              </div>` : ""}
-
-            <div class="perf-scent-price-row">
-              <div>
-                <div class="perf-scent-price-ves">Bs. ${fmt(ves)}</div>
-                <div class="perf-scent-price-usd">
-                  <span>≈ $${fmt(usd)}</span>
-                  <span class="perf-bcv-badge" title="Tasa oficial Banco Central de Venezuela">BCV</span>
-                  <span style="margin-left:5px;opacity:0.65">· ${sizeLabel(sel.mode, sizeKey)}</span>
-                </div>
-              </div>
-            </div>
-
-            <div class="perf-scent-bottom">
-              <div class="perf-card-hint" style="margin:0">Quedan ${remainingMl}ml disponibles para pedir</div>
-              <button class="perf-btn blush" data-action="add-to-cart" data-id="${p.id}" ${info.ml > remainingMl ? "disabled" : ""}><i data-lucide="shopping-bag" size="15"></i> Agregar</button>
-            </div>
-          </div>`;
-  }).join("")}
-      </div>
+          </div>
+        </div>`;
+      }).join("")}
     `}
 
     <div class="perf-footer">
@@ -1670,5 +1742,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = e.target;
     if (el.dataset.action === "upload-image") handleImageFile(el.files && el.files[0]);
     if (el.dataset.action === "upload-edit-image") handleEditImageFile(el.files && el.files[0]);
+    if (el.dataset.action === "input-newprod") {
+      state.newProd[el.dataset.field] = el.value;
+    }
+    if (el.dataset.action === "input-editprod" && state.editingProd) {
+      state.editingProd[el.dataset.field] = el.value;
+    }
   });
 });

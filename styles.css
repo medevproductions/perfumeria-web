@@ -233,6 +233,91 @@ body{
   min-width: 130px;
 }
 
+/* Buscador Sticky con Backdrop Blur */
+.perf-sticky-search{
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  padding: 12px 16px;
+  background: rgba(11, 17, 30, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+  margin: 0 -16px 18px;
+}
+.perf-sticky-search .perf-search-container{
+  margin-bottom: 0;
+}
+
+/* Categorías y Carruseles */
+.perf-category-section{
+  margin-bottom: 26px;
+}
+.perf-category-header{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 4px 10px;
+  border-bottom: 1px solid rgba(229, 184, 105, 0.25);
+  margin-bottom: 12px;
+}
+.perf-category-title{
+  font-family: 'Fraunces', Georgia, serif;
+  font-size: 17.5px;
+  font-weight: 600;
+  color: var(--gold-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.perf-category-badge{
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.6);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+}
+
+/* Contenedor Carrusel Horizontal */
+.perf-carousel-wrapper{
+  position: relative;
+  margin: 0 -16px;
+  padding: 4px 16px 12px;
+}
+.perf-carousel-track{
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.perf-carousel-track::-webkit-scrollbar{ display: none; }
+
+.perf-carousel-card{
+  flex: 0 0 280px;
+  scroll-snap-align: start;
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  padding: 15px;
+  background: linear-gradient(145deg, rgba(22, 34, 56, 0.95), rgba(15, 23, 42, 0.92));
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+@media (min-width: 640px) {
+  .perf-carousel-card{ flex: 0 0 310px; }
+}
+
 /* Buscador y Sugerencias de Autocompletado */
 .perf-search-container{
   position: relative;
@@ -252,37 +337,41 @@ body{
 }
 .perf-search-input{
   width: 100%;
-  background: rgba(22, 34, 56, 0.85);
+  background: rgba(11, 17, 30, 0.85);
   border: 1px solid var(--line-strong);
-  border-radius: 14px;
-  padding: 13px 40px 13px 42px;
+  border-radius: 999px;
+  padding: 12px 38px 12px 42px;
   color: #ffffff;
   font-family: 'Manrope', sans-serif;
-  font-size: 14px;
+  font-size: 14.5px;
   font-weight: 600;
   outline: none;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
   transition: all .2s ease;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 .perf-search-input:focus{
-  border-color: var(--gold);
-  background: rgba(22, 34, 56, 1);
-  box-shadow: 0 0 0 2px rgba(229, 184, 105, 0.25);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+  background: rgba(11, 17, 30, 1);
 }
 .perf-search-clear{
   position: absolute;
-  right: 10px;
+  right: 12px;
   background: transparent;
   border: none;
   color: rgba(248, 250, 252, 0.5);
   cursor: pointer;
-  padding: 6px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  transition: all .15s;
 }
-.perf-search-clear:hover{ color: #ffffff; }
+.perf-search-clear:hover{
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
 
 /* Dropdown de Sugerencias */
 .perf-suggestions-dropdown{
@@ -290,14 +379,16 @@ body{
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  background: rgba(22, 34, 56, 0.98);
-  border: 1px solid var(--line-strong);
+  background: rgba(15, 23, 42, 0.98);
+  border: 1px solid var(--accent-cyan);
   border-radius: 16px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(16px);
   overflow: hidden;
-  z-index: 60;
-  animation: slideDown .18s ease-out;
+  z-index: 50;
+  animation: fadeIn .15s ease;
+  max-height: 280px;
+  overflow-y: auto;
 }
 @keyframes slideDown {
   from { opacity: 0; transform: translateY(-6px); }
@@ -307,32 +398,31 @@ body{
 .perf-suggestion-item{
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--line);
   cursor: pointer;
-  transition: background .15s ease;
+  transition: background .15s;
 }
 .perf-suggestion-item:last-child{ border-bottom: none; }
-.perf-suggestion-item:hover, .perf-suggestion-item:active{
-  background: rgba(56, 189, 248, 0.15);
+.perf-suggestion-item:hover{
+  background: rgba(56, 189, 248, 0.12);
 }
 .perf-suggestion-thumb{
-  width: 38px;
-  height: 38px;
-  border-radius: 9px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
   object-fit: contain;
-  background: var(--navy-dark);
   border: 1px solid var(--line);
-  flex: 0 0 auto;
+  background: var(--navy-dark);
 }
 .perf-suggestion-info{
   flex: 1;
   min-width: 0;
 }
 .perf-suggestion-name{
-  font-weight: 700;
   font-size: 13.5px;
+  font-weight: 700;
   color: #ffffff;
   white-space: nowrap;
   overflow: hidden;
@@ -340,17 +430,17 @@ body{
 }
 .perf-suggestion-name mark{
   background: transparent;
-  color: var(--gold-soft);
-  font-weight: 800;
+  color: var(--accent-cyan);
   text-decoration: underline;
 }
 .perf-suggestion-meta{
-  font-size: 11.5px;
-  color: rgba(248, 250, 252, 0.55);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: rgba(248, 250, 252, 0.6);
   margin-top: 1px;
 }
 .perf-suggestion-arrow{
-  color: rgba(248, 250, 252, 0.4);
+  color: rgba(248, 250, 252, 0.35);
   flex: 0 0 auto;
 }
 

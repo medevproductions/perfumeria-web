@@ -941,8 +941,7 @@ function tpl_header() {
     <div class="perf-header perf-admin-header">
       <div class="perf-header-top">
         <div>
-          <div class="perf-brand"><i data-lucide="shield-check" size="14"></i> Modo Administrador ${state.isCloudMode ? '<span style="font-size:10.5px;opacity:0.9;color:var(--ok)">● Firebase Nube</span>' : ''}</div>
-          <div class="perf-title" style="font-size:22px">Panel de Control</div>
+          <div class="perf-title" style="font-size:24px">Panel de Control</div>
         </div>
         <div class="perf-admin-nav-actions">
           <button class="perf-btn ghost sm" data-action="nav-catalogo" title="Ir al catálogo público">

@@ -1462,9 +1462,11 @@ function tpl_catalogo() {
           </div>
 
           <div class="perf-carousel-wrapper">
-            <div class="perf-carousel-track">
+            <button class="perf-carousel-arrow left" data-action="scroll-carousel" data-target="track-${cat.key}" data-dir="-1" title="Anterior"><i data-lucide="chevron-left" size="20"></i></button>
+            <div id="track-${cat.key}" class="perf-carousel-track">
               ${items.map((p) => tpl_product_card(p)).join("")}
             </div>
+            <button class="perf-carousel-arrow right" data-action="scroll-carousel" data-target="track-${cat.key}" data-dir="1" title="Siguiente"><i data-lucide="chevron-right" size="20"></i></button>
           </div>
         </div>`;
       }).join("")}
@@ -1708,6 +1710,15 @@ document.addEventListener("DOMContentLoaded", () => {
         state.cartOpen = false;
         render();
         break;
+      case "scroll-carousel": {
+        const targetId = trigger.dataset.target;
+        const dir = Number(trigger.dataset.dir) || 1;
+        const track = document.getElementById(targetId);
+        if (track) {
+          track.scrollBy({ left: dir * 360, behavior: "smooth" });
+        }
+        break;
+      }
       case "send-whatsapp":
         handleSendClick(e);
         break;

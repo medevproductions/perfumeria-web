@@ -1400,8 +1400,7 @@ function tpl_catalogo() {
               <img class="perf-scent-img" src="${p.imagen || PLACEHOLDER_IMG}" alt="${esc(p.nombre)}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
               <div>
                 <div class="perf-scent-name">${highlightMatch(p.nombre, state.searchCatalog)}</div>
-                <div class="perf-scent-avail">${p.stockMl}ml disponibles en esencia</div>
-                <div class="perf-scent-promo">-20% a partir de 3 unidades </div>
+                <div class="perf-scent-promo">-20% a partir de 3 unidades</div>
               </div>
             </div>
 

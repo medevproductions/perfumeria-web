@@ -125,11 +125,19 @@ function highlightMatch(text, query) {
 }
 
 function formatRateTimestamp(ts) {
-  if (!ts || ts === "0" || ts === 0) return "Sincronizado recientemente";
+  if (!ts || ts === "0" || ts === 0) return "Nunca sincronizado";
   const num = typeof ts === "number" && ts < 10000000000 ? ts * 1000 : Number(ts);
   const d = new Date(num);
   if (isNaN(d.getTime())) return "Recientemente";
-  return d.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit" }) + " (" + d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" }) + ")";
+
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const timeStr = d.toLocaleTimeString("es-VE", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+  if (isToday) {
+    return `Hoy, ${timeStr}`;
+  }
+  return `${d.toLocaleDateString("es-VE", { day: "2-digit", month: "short" })}, ${timeStr}`;
 }
 
 // ---------------- state ----------------
@@ -240,23 +248,96 @@ function handleLogout() {
 }
 
 // ---------------- sync live rates ----------------
-async function syncLiveRates() {
+async function fetchRealRates() {
+  let newBcv = null;
+  let newBinance = null;
+  let newCop = null;
+
+  // 1. Consultar Tasa Oficial BCV desde API pública en vivo
+  try {
+    const resBcv = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
+    if (resBcv.ok) {
+      const dataBcv = await resBcv.json();
+      if (dataBcv && dataBcv.promedio) {
+        newBcv = String(Number(dataBcv.promedio).toFixed(2));
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudo obtener BCV desde DolarApi:", e);
+  }
+
+  // 2. Consultar Tasa Binance USDT en Bs. desde API / P2P
+  try {
+    const resBinance = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: "no-store" });
+    if (resBinance.ok) {
+      const dataBinance = await resBinance.json();
+      if (dataBinance && dataBinance.promedio) {
+        newBinance = String(Number(dataBinance.promedio).toFixed(2));
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudo obtener tasa Binance/Paralelo:", e);
+  }
+
+  // 3. Consultar Tasa COP (USD a COP)
+  try {
+    const resCop = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
+    if (resCop.ok) {
+      const dataCop = await resCop.json();
+      if (dataCop && dataCop.rates && dataCop.rates.COP) {
+        newCop = String(Number(dataCop.rates.COP).toFixed(2));
+      }
+    }
+  } catch (e) {
+    console.warn("No se pudo obtener COP desde open.er-api:", e);
+  }
+
+  return { newBcv, newBinance, newCop };
+}
+
+async function syncLiveRates(silent = false) {
   state.syncingRates = true;
-  render();
+  if (!silent) render();
 
   try {
-    state.config.bcv = "794.99";
-    state.config.binance = "938.61";
-    state.config.cop = "3169.59";
+    const { newBcv, newBinance, newCop } = await fetchRealRates();
+    let updated = false;
+
+    if (newBcv && Number(newBcv) > 0) {
+      state.config.bcv = newBcv;
+      updated = true;
+    }
+    if (newBinance && Number(newBinance) > 0) {
+      state.config.binance = newBinance;
+      updated = true;
+    }
+    if (newCop && Number(newCop) > 0) {
+      state.config.cop = newCop;
+      updated = true;
+    }
+
     state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
     saveConfig();
-    showToast("Tasas actualizadas en tiempo real");
+    if (!silent) {
+      showToast(updated ? "Tasas actualizadas con éxito" : "Tasas sincronizadas");
+    }
   } catch (e) {
-    showToast("Error al consultar tasas en vivo");
+    if (!silent) showToast("Error al consultar tasas en vivo");
   }
 
   state.syncingRates = false;
   render();
+}
+
+function checkPeriodicRateSync() {
+  const last = Number(state.config.last_rates_update) || 0;
+  const now = Math.floor(Date.now() / 1000);
+  const oneHour = 3600; // 1 hora en segundos
+
+  // Si han pasado más de 60 minutos desde la última actualización, consultar automáticamente
+  if (now - last > oneHour) {
+    syncLiveRates(true);
+  }
 }
 
 // ---------------- persistence & Firebase Cloud Sync ----------------
@@ -347,6 +428,10 @@ function loadState() {
   initFirebaseListeners();
   syncRouteFromHash();
   render();
+
+  // Verificar si hace falta actualizar tasas automáticamente (cada 1 hora)
+  checkPeriodicRateSync();
+  setInterval(checkPeriodicRateSync, 60 * 1000);
 }
 
 function saveLocalBackup() {

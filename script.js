@@ -985,25 +985,55 @@ function tpl_admin_precios() {
   return `
   <div class="perf-section">
     <div class="perf-card">
-      <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Precio base global por presentación (en Bolívares - Bs.)</div>
-      <div class="perf-card-hint">Precios en Bolívares aplicados por defecto a todas las esencias. El valor en USD se calcula automáticamente con la tasa oficial BCV (${fmt(bcv)} Bs.).</div>
-      <div class="perf-row2">
-        ${PRESENTATIONS.map((p) => {
-    const vesVal = Number(state.config.precios[p.key]) || 0;
-    const usdVal = bcv > 0 ? vesVal / bcv : 0;
-    return `
-          <div class="perf-field" style="min-width:45%">
-            <label class="perf-label"><span>${p.label} (Bs.)</span></label>
-            <input id="precio-${p.key}" class="perf-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
-            ${vesVal > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(usdVal)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
-          </div>`;
-  }).join("")}
+      <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Configuración de Precios por Presentación</div>
+      <div class="perf-card-hint">Edita los precios base en Bolívares (Bs.). El valor de referencia en dólares ($) se calcula automáticamente según la tasa oficial BCV (${fmt(bcv)} Bs.).</div>
+      
+      <div class="perf-table-wrapper">
+        <table class="perf-table">
+          <thead>
+            <tr>
+              <th>Presentación / Tipo</th>
+              <th>Mililitros</th>
+              <th style="min-width:140px">Precio Base (Bs.)</th>
+              <th>Referencia USD</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${PRESENTATIONS.map((p) => {
+              const vesVal = Number(state.config.precios[p.key]) || 0;
+              const usdVal = bcv > 0 ? vesVal / bcv : 0;
+              return `
+              <tr>
+                <td>
+                  <strong style="color:#ffffff">${p.label}</strong>
+                </td>
+                <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">${p.ml} ml</span></td>
+                <td>
+                  <input id="precio-${p.key}" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
+                </td>
+                <td>
+                  <span style="font-family:'IBM Plex Mono',monospace;color:var(--gold-soft);font-size:12.5px">≈ $${fmt(usdVal)}</span>
+                  <span class="perf-bcv-badge">BCV</span>
+                </td>
+              </tr>`;
+            }).join("")}
+            <tr>
+              <td>
+                <strong style="color:#ffffff">Recargas / Refills (30ml y 35ml)</strong>
+              </td>
+              <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">30 - 35 ml</span></td>
+              <td>
+                <input id="precio-refill" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
+              </td>
+              <td>
+                <span style="font-family:'IBM Plex Mono',monospace;color:var(--gold-soft);font-size:12.5px">≈ $${fmt(Number(state.config.precios.refill) / bcv)}</span>
+                <span class="perf-bcv-badge">BCV</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <div class="perf-field">
-        <label class="perf-label"><span>Recarga / Refill (30ml o 35ml) en Bs.</span></label>
-        <input id="precio-refill" class="perf-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
-        ${Number(state.config.precios.refill) > 0 ? `<div class="perf-card-hint" style="margin:4px 0 0">≈ $${fmt(Number(state.config.precios.refill) / bcv)} <span class="perf-bcv-badge">BCV</span></div>` : ""}
-      </div>
+      <div class="perf-card-hint" style="margin-top:12px;font-size:11.5px;color:rgba(248,250,252,0.5)">* Los cambios se guardan y sincronizan automáticamente en tiempo real con Firebase en la nube.</div>
     </div>
   </div>`;
 }

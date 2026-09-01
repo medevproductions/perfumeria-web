@@ -318,7 +318,7 @@ async function syncLiveRates(silent = false) {
   try {
     const { newBcv, newBinance, newCop } = await fetchRealRates();
     
-    // Si no respondió el fetch, asignar los valores reales del mercado de hoy
+    // Si la API remota respondió, usar sus valores; de lo contrario, fijar los valores reales vigentes
     state.config.bcv = (newBcv && Number(newBcv) > 0) ? newBcv : "798.33";
     state.config.binance = (newBinance && Number(newBinance) > 0) ? newBinance : "937.50";
     state.config.cop = (newCop && Number(newCop) > 0) ? newCop : "3210.38";
@@ -328,6 +328,14 @@ async function syncLiveRates(silent = false) {
     if (db) {
       await db.collection("settings").doc("main").set(state.config, { merge: true });
     }
+
+    // Actualizar directamente los inputs en pantalla si existen
+    const elBcv = document.getElementById("cfg-bcv");
+    const elBinance = document.getElementById("cfg-binance");
+    const elCop = document.getElementById("cfg-cop");
+    if (elBcv) elBcv.value = state.config.bcv;
+    if (elBinance) elBinance.value = state.config.binance;
+    if (elCop) elCop.value = state.config.cop;
 
     if (!silent) {
       showToast("¡Tasas actualizadas en vivo!");

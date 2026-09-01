@@ -912,6 +912,10 @@ function tpl_header() {
       <div class="perf-brand"><i data-lucide="sparkles" size="14"></i> ${esc(state.config.negocio || "Perfumería")}</div>
       <div class="perf-title">Catálogo &amp; Pedidos</div>
       <div class="perf-sub">Fragancias exclusivas, envases y recargas disponibles</div>
+      <div class="perf-promo-banner">
+        <i data-lucide="tag" size="14"></i>
+        <span>¡Promoción activa! <b>-20% de descuento</b> a partir de 3 unidades</span>
+      </div>
     </div>`;
   }
   if (state.route === "admin") {
@@ -1351,7 +1355,6 @@ function tpl_product_card(p) {
       <img class="perf-scent-img" src="${p.imagen || PLACEHOLDER_IMG}" alt="${esc(p.nombre)}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
       <div style="flex:1;min-width:0">
         <div class="perf-scent-name" style="font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${highlightMatch(cleanDisplayName(p.nombre), state.searchCatalog)}</div>
-        <div class="perf-scent-promo">-20% a partir de 3 unidades</div>
       </div>
     </div>
 

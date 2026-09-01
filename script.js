@@ -253,44 +253,62 @@ async function fetchRealRates() {
   let newBinance = null;
   let newCop = null;
 
-  // 1. Consultar Tasa Oficial BCV desde API pública en vivo
+  // 1. Consultar Tasa Oficial BCV
   try {
-    const resBcv = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
-    if (resBcv.ok) {
-      const dataBcv = await resBcv.json();
-      if (dataBcv && dataBcv.promedio) {
-        newBcv = String(Number(dataBcv.promedio).toFixed(2));
+    const res = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.promedio) {
+        newBcv = String(Number(data.promedio).toFixed(2));
       }
     }
-  } catch (e) {
-    console.warn("No se pudo obtener BCV desde DolarApi:", e);
+  } catch (e) {}
+
+  if (!newBcv) {
+    try {
+      const res = await fetch("https://pydolarve.org/api/v1/dollar?page=bcv", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.monitors && data.monitors.usd && data.monitors.usd.price) {
+          newBcv = String(Number(data.monitors.usd.price).toFixed(2));
+        }
+      }
+    } catch (e) {}
   }
 
-  // 2. Consultar Tasa Binance USDT en Bs. desde API / P2P
+  // 2. Consultar Tasa Binance USDT en Bs. / Paralelo
   try {
-    const resBinance = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: "no-store" });
-    if (resBinance.ok) {
-      const dataBinance = await resBinance.json();
-      if (dataBinance && dataBinance.promedio) {
-        newBinance = String(Number(dataBinance.promedio).toFixed(2));
+    const res = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.promedio) {
+        newBinance = String(Number(data.promedio).toFixed(2));
       }
     }
-  } catch (e) {
-    console.warn("No se pudo obtener tasa Binance/Paralelo:", e);
+  } catch (e) {}
+
+  if (!newBinance) {
+    try {
+      const res = await fetch("https://api.yadio.io/rate/VES/USD", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.rate) {
+          newBinance = String(Number(data.rate).toFixed(2));
+        }
+      }
+    } catch (e) {}
   }
 
   // 3. Consultar Tasa COP (USD a COP)
   try {
-    const resCop = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
-    if (resCop.ok) {
-      const dataCop = await resCop.json();
-      if (dataCop && dataCop.rates && dataCop.rates.COP) {
-        newCop = String(Number(dataCop.rates.COP).toFixed(2));
+    const res = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.rates && data.rates.COP) {
+        newCop = String(Number(data.rates.COP).toFixed(2));
       }
     }
-  } catch (e) {
-    console.warn("No se pudo obtener COP desde open.er-api:", e);
-  }
+  } catch (e) {}
 
   return { newBcv, newBinance, newCop };
 }
@@ -317,12 +335,18 @@ async function syncLiveRates(silent = false) {
     }
 
     state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
-    saveConfig();
+    
+    // Guardar inmediatamente
+    saveLocalBackup();
+    if (db) {
+      db.collection("settings").doc("main").set(state.config, { merge: true }).catch((err) => console.warn(err));
+    }
+
     if (!silent) {
-      showToast(updated ? "Tasas actualizadas con éxito" : "Tasas sincronizadas");
+      showToast(updated ? "¡Tasas actualizadas en vivo!" : "Tasas sincronizadas con éxito");
     }
   } catch (e) {
-    if (!silent) showToast("Error al consultar tasas en vivo");
+    if (!silent) showToast("Error al consultar tasas: " + e.message);
   }
 
   state.syncingRates = false;
@@ -1591,7 +1615,7 @@ document.addEventListener("DOMContentLoaded", () => {
         handleLogout();
         break;
       case "sync-rates":
-        syncLiveRates();
+        syncLiveRates(false);
         break;
       case "set-adminsub":
         state.adminSub = trigger.dataset.sub;

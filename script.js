@@ -259,51 +259,38 @@ function handleLogout() {
 
 // ---------------- sync live rates ----------------
 async function fetchRealRates() {
-  let newBcv = null;
-  let newBinance = null;
-  let newCop = null;
+  let newBcv = "798.33";
+  let newBinance = "937.50";
+  let newCop = "3210.38";
 
-  // 1. Intentar consultar endpoint Backend Vercel
-  try {
-    const resApi = await fetch("/api/rates", { cache: "no-store" });
-    if (resApi.ok) {
-      const dataApi = await resApi.json();
-      if (dataApi.success) {
-        if (dataApi.bcv) newBcv = String(dataApi.bcv);
-        if (dataApi.binance) newBinance = String(dataApi.binance);
-        if (dataApi.cop) newCop = String(dataApi.cop);
-        return { newBcv, newBinance, newCop };
-      }
-    }
-  } catch (e) {}
-
-  // 2. Fallback Directo de BCV Oficial
+  // 1. Consultar BCV
   try {
     const res = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
     if (res.ok) {
       const data = await res.json();
       const val = data.promedio || data.venta || data.precio || data.price;
-      if (val) newBcv = String(Number(val).toFixed(2));
+      if (val && Number(val) > 0) newBcv = String(Number(val).toFixed(2));
     }
   } catch (e) {}
 
-  // 3. Fallback Directo Binance P2P / Paralelo
+  // 2. Consultar Binance P2P / Mercado Real
   try {
-    const res = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      const val = data.promedio || data.venta || data.precio || data.price;
-      if (val) newBinance = String(Number(val).toFixed(2));
+    const p2pRes = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent("https://api.yadio.io/rate/VES/USD"), { cache: "no-store" });
+    if (p2pRes.ok) {
+      const p2pData = await p2pRes.json();
+      if (p2pData && p2pData.rate && Number(p2pData.rate) > 0) {
+        newBinance = String(Number(p2pData.rate).toFixed(2));
+      }
     }
   } catch (e) {}
 
-  // 4. Fallback Directo COP
+  // 3. Consultar COP (Pesos Colombianos)
   try {
-    const res = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      if (data && data.rates && data.rates.COP) {
-        newCop = String(Number(data.rates.COP).toFixed(2));
+    const copRes = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
+    if (copRes.ok) {
+      const copData = await copRes.json();
+      if (copData && copData.rates && copData.rates.COP) {
+        newCop = String(Number(copData.rates.COP).toFixed(2));
       }
     }
   } catch (e) {}
@@ -318,10 +305,9 @@ async function syncLiveRates(silent = false) {
   try {
     const { newBcv, newBinance, newCop } = await fetchRealRates();
     
-    // Si la API remota respondió, usar sus valores; de lo contrario, fijar los valores reales vigentes
-    state.config.bcv = (newBcv && Number(newBcv) > 0) ? newBcv : "798.33";
-    state.config.binance = (newBinance && Number(newBinance) > 0) ? newBinance : "937.50";
-    state.config.cop = (newCop && Number(newCop) > 0) ? newCop : "3210.38";
+    state.config.bcv = newBcv;
+    state.config.binance = newBinance;
+    state.config.cop = newCop;
     state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
     
     saveLocalBackup();
@@ -329,19 +315,11 @@ async function syncLiveRates(silent = false) {
       await db.collection("settings").doc("main").set(state.config, { merge: true });
     }
 
-    // Actualizar directamente los inputs en pantalla si existen
-    const elBcv = document.getElementById("cfg-bcv");
-    const elBinance = document.getElementById("cfg-binance");
-    const elCop = document.getElementById("cfg-cop");
-    if (elBcv) elBcv.value = state.config.bcv;
-    if (elBinance) elBinance.value = state.config.binance;
-    if (elCop) elCop.value = state.config.cop;
-
     if (!silent) {
-      showToast("¡Tasas actualizadas en vivo!");
+      showToast(`¡Tasas en vivo: BCV ${newBcv} | Binance ${newBinance}!`);
     }
   } catch (e) {
-    if (!silent) showToast("Error al consultar tasas: " + e.message);
+    if (!silent) showToast("Error al sincronizar tasas: " + e.message);
   }
 
   state.syncingRates = false;

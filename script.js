@@ -216,6 +216,7 @@ let state = {
     precioBs: ""
   },
   editingProd: null,
+  outOfStockModal: null, // { productName, remainingMl }
   loginInput: "",
   loginError: "",
   isAuthenticated: false,
@@ -924,7 +925,20 @@ function addToCart(productId) {
   const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
   const info = sizeInfo(sel.mode, sizeKey);
   const already = mlReservedForProduct(productId);
-  if (already + info.ml > product.stockMl) { showToast("No hay suficiente stock en ml para esa presentación"); return; }
+  const remaining = product.stockMl - already;
+
+  if (remaining <= 0 || already + info.ml > product.stockMl) {
+    state.outOfStockModal = {
+      productName: cleanDisplayName(product.nombre),
+      imagen: product.imagen || PLACEHOLDER_IMG,
+      remainingMl: Math.max(0, remaining),
+      requestedMl: info ? info.ml : 0,
+      presLabel: sizeLabel(sel.mode, sizeKey)
+    };
+    render();
+    return;
+  }
+
   const key = lineKey(productId, sel.mode, sizeKey);
   const current = state.cart[key];
   state.cart[key] = { productId, mode: sel.mode, sizeKey, qty: (current?.qty || 0) + 1 };
@@ -1597,14 +1611,18 @@ function tpl_product_card(p) {
     </div>
 
     <div class="perf-scent-bottom" style="margin-top:10px">
-      <div class="perf-card-hint" style="margin:0;font-size:11px">Quedan ${remainingMl}ml disponibles</div>
-      <button class="perf-btn blush sm" data-action="add-to-cart" data-id="${p.id}" ${info.ml > remainingMl ? "disabled" : ""} style="padding:7px 14px"><i data-lucide="shopping-bag" size="14"></i> Agregar</button>
+      <div class="perf-card-hint" style="margin:0;font-size:11px">
+        ${remainingMl <= 0 ? `<span style="color:var(--warn);font-weight:700">Agotado temporalmente</span>` : `Quedan ${remainingMl}ml disponibles`}
+      </div>
+      <button class="perf-btn ${remainingMl <= 0 ? "outline" : "blush"} sm" data-action="add-to-cart" data-id="${p.id}" style="padding:7px 14px">
+        <i data-lucide="${remainingMl <= 0 ? "alert-circle" : "shopping-bag"}" size="14"></i> ${remainingMl <= 0 ? "Agotado" : "Agregar"}
+      </button>
     </div>
   </div>`;
 }
 
 function tpl_catalogo() {
-  const catalog = state.inventory.filter((p) => p.stockMl > 0);
+  const catalog = state.inventory;
   const q = normalizeStr(state.searchCatalog);
   const filtered = catalog.filter((p) => normalizeStr(p.nombre).includes(q));
 
@@ -1755,6 +1773,30 @@ function tpl_cartsheet() {
   </div>`;
 }
 
+function tpl_outofstock_modal() {
+  const m = state.outOfStockModal;
+  if (!m) return "";
+
+  return `
+  <div class="perf-modal-backdrop" data-action="close-outofstock-modal">
+    <div class="perf-modal-box" onclick="event.stopPropagation()">
+      <div class="perf-modal-icon-wrap">
+        <i data-lucide="package-x" size="36"></i>
+      </div>
+      <div class="perf-modal-title">¡Perfume Agotado!</div>
+      <div class="perf-modal-body">
+        Disculpa, la fragancia <strong style="color:var(--gold-soft)">"${esc(m.productName)}"</strong> se encuentra temporalmente agotada o no cuenta con suficiente stock en mililitros para la opción seleccionada (${m.presLabel}).
+        ${m.remainingMl > 0 ? `<div style="margin-top:8px;font-size:12px;opacity:0.8">Actualmente quedan solo <strong>${m.remainingMl}ml</strong> disponibles de esta esencia.</div>` : ""}
+      </div>
+      <div class="perf-modal-actions">
+        <button class="perf-btn gold full" data-action="close-outofstock-modal">
+          Entendido, ver otras fragancias
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function tpl_toast() {
   if (!state.toast) return "";
   return `<div class="perf-toast">${esc(state.toast)}</div>`;
@@ -1770,6 +1812,7 @@ function render() {
 
   app.innerHTML = `
     ${tpl_toast()}
+    ${tpl_outofstock_modal()}
     ${tpl_header()}
     ${state.route === "login" ? tpl_login() : ""}
     ${state.route === "admin" && state.isAuthenticated ? tpl_admin() : ""}
@@ -1946,6 +1989,10 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "remove-pres":
         removeCustomPresentation(trigger.dataset.key);
+        break;
+      case "close-outofstock-modal":
+        state.outOfStockModal = null;
+        render();
         break;
       case "send-whatsapp":
         handleSendClick(e);

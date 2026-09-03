@@ -1013,6 +1013,11 @@ body{
 .perf-iconbtn.edit{ color: var(--gold-soft); }
 .perf-iconbtn.danger{ color: var(--warn); }
 .perf-iconbtn.danger:hover{ background: rgba(251, 146, 60, 0.2); }
+.perf-iconbtn.xs{
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
 
 /* Formulario de Edición */
 .perf-edit-card{

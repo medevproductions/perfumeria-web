@@ -27,12 +27,19 @@ try {
   console.warn("Firebase no se pudo inicializar:", e);
 }
 
-const PRESENTATIONS = [
+const DEFAULT_PRESENTATIONS = [
   { key: "plastico35", label: "Plástico 35ml", ml: 35 },
   { key: "vidrio30", label: "Vidrio 30ml", ml: 30 },
   { key: "vidrio50", label: "Vidrio 50ml", ml: 50 },
   { key: "vidrio60", label: "Vidrio 60ml", ml: 60 },
 ];
+
+function getPresentations() {
+  if (state.config && Array.isArray(state.config.presentaciones) && state.config.presentaciones.length > 0) {
+    return state.config.presentaciones;
+  }
+  return DEFAULT_PRESENTATIONS;
+}
 
 const CATEGORIES = [
   { key: "men", label: "Caballeros", icon: "sparkles", match: ["men", "caballero", "hombre"] },
@@ -121,6 +128,7 @@ const DEFAULT_CONFIG = {
   banco: "",
   adminPassword: "admin",
   last_rates_update: "0",
+  presentaciones: JSON.parse(JSON.stringify(DEFAULT_PRESENTATIONS)),
   precios: { plastico35: "9500", vidrio30: "12000", vidrio50: "17500", vidrio60: "17500", refill: "8000" }, // Precios base en Bolívares (Bs.)
 };
 
@@ -201,6 +209,11 @@ let state = {
     imagen: "",
     customPricesEnabled: false,
     precios: { plastico35: "", vidrio30: "", vidrio5060: "", refill: "" }
+  },
+  newPres: {
+    label: "",
+    ml: "",
+    precioBs: ""
   },
   editingProd: null,
   loginInput: "",
@@ -391,6 +404,7 @@ function initFirebaseListeners() {
       state.config = {
         ...DEFAULT_CONFIG,
         ...data,
+        presentaciones: Array.isArray(data.presentaciones) && data.presentaciones.length > 0 ? data.presentaciones : DEFAULT_PRESENTATIONS,
         precios: { ...DEFAULT_CONFIG.precios, ...(data.precios || {}) }
       };
       // Verificar si las tasas tienen más de 1 hora de antigüedad
@@ -442,7 +456,12 @@ function loadState() {
     const c = localStorage.getItem("perfumeria_config");
     if (c) {
       const parsed = JSON.parse(c);
-      state.config = { ...DEFAULT_CONFIG, ...parsed, precios: { ...DEFAULT_CONFIG.precios, ...(parsed.precios || {}) } };
+      state.config = {
+        ...DEFAULT_CONFIG,
+        ...parsed,
+        presentaciones: Array.isArray(parsed.presentaciones) && parsed.presentaciones.length > 0 ? parsed.presentaciones : DEFAULT_PRESENTATIONS,
+        precios: { ...DEFAULT_CONFIG.precios, ...(parsed.precios || {}) }
+      };
     }
   } catch (e) { }
 
@@ -538,7 +557,8 @@ function copPreview() {
 }
 
 function sizeInfo(mode, sizeKey) {
-  return mode === "refill" ? REFILL_SIZES.find((r) => r.key === sizeKey) : PRESENTATIONS.find((p) => p.key === sizeKey);
+  const presList = getPresentations();
+  return mode === "refill" ? REFILL_SIZES.find((r) => r.key === sizeKey) : presList.find((p) => p.key === sizeKey);
 }
 
 function sizeLabel(mode, sizeKey) {
@@ -577,7 +597,9 @@ function hasCustomPrices(product) {
 }
 
 function getSelection(productId) {
-  return state.selection[productId] || { mode: "envase", presKey: PRESENTATIONS[0].key, refillKey: REFILL_SIZES[0].key };
+  const presList = getPresentations();
+  const defaultKey = presList[0]?.key || "plastico35";
+  return state.selection[productId] || { mode: "envase", presKey: defaultKey, refillKey: REFILL_SIZES[0].key };
 }
 
 function mlReservedForProduct(productId) {
@@ -623,6 +645,70 @@ function lineKey(productId, mode, sizeKey) { return `${productId}__${mode}__${si
 // ---------------- actions ----------------
 function updateConfigField(key, value) { state.config[key] = value; saveConfig(); }
 function updatePrecioField(key, value) { state.config.precios[key] = value; saveConfig(); }
+
+function addCustomPresentation() {
+  const label = (state.newPres.label || "").trim();
+  const ml = parseInt(state.newPres.ml, 10);
+  const precioBs = (state.newPres.precioBs || "").trim();
+
+  if (!label) {
+    showToast("Ingresa el nombre o tipo de presentación (ej: Vidrio 100ml)");
+    return;
+  }
+  if (isNaN(ml) || ml <= 0) {
+    showToast("Ingresa una cantidad válida de mililitros (ml > 0)");
+    return;
+  }
+
+  // Generar clave única basada en el nombre y ml
+  const cleanKey = "pres_" + normalizeStr(label).replace(/[^a-z0-9]/g, "") + "_" + ml;
+  const currentList = [...getPresentations()];
+
+  if (currentList.some((p) => p.key === cleanKey)) {
+    showToast("Ya existe una presentación similar");
+    return;
+  }
+
+  const newPresObj = { key: cleanKey, label: `${label} ${ml}ml`, ml };
+  currentList.push(newPresObj);
+
+  if (!state.config.presentaciones) {
+    state.config.presentaciones = [];
+  }
+  state.config.presentaciones = currentList;
+
+  // Asignar precio base si fue provisto
+  if (precioBs && !isNaN(Number(precioBs))) {
+    state.config.precios[cleanKey] = precioBs;
+  }
+
+  state.newPres = { label: "", ml: "", precioBs: "" };
+  saveConfig();
+  showToast(`Presentación "${newPresObj.label}" agregada`);
+  render();
+}
+
+function removeCustomPresentation(presKey) {
+  const currentList = getPresentations();
+  const pres = currentList.find((p) => p.key === presKey);
+  if (!pres) return;
+
+  if (currentList.length <= 1) {
+    showToast("Debes mantener al menos una presentación disponible");
+    return;
+  }
+
+  if (!confirm(`¿Eliminar la presentación "${pres.label}"?`)) return;
+
+  state.config.presentaciones = currentList.filter((p) => p.key !== presKey);
+  if (state.config.precios && state.config.precios[presKey]) {
+    delete state.config.precios[presKey];
+  }
+
+  saveConfig();
+  showToast(`Presentación "${pres.label}" eliminada`);
+  render();
+}
 
 function handleImageFile(file) {
   if (!file) return;
@@ -1153,12 +1239,13 @@ function tpl_admin_precios() {
   const bcv = tasaBCV();
   const binance = tasaBinanceRaw();
   const venta = tasaVenta();
+  const presList = getPresentations();
 
   return `
   <div class="perf-section">
     <div class="perf-card">
       <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Configuración de Precios por Presentación</div>
-      <div class="perf-card-hint">Edita los precios base en Bolívares (Bs.). Las equivalencias en dólares y pesos colombianos se calculan automáticamente con las tasas vigentes.</div>
+      <div class="perf-card-hint">Edita los precios base en Bolívares (Bs.). Las equivalencias en dólares y pesos colombianos se calculan automáticamente con las tasas vigentes. Al agregar una presentación, sus ml exactos se descuentan automáticamente del inventario al realizar pedidos.</div>
       
       <div class="perf-table-wrapper">
         <table class="perf-table">
@@ -1168,10 +1255,11 @@ function tpl_admin_precios() {
               <th>Mililitros</th>
               <th style="min-width:130px">Precio Base (Bs.)</th>
               <th style="min-width:180px">Referencias Multi-Divisa</th>
+              <th style="width:40px"></th>
             </tr>
           </thead>
           <tbody>
-            ${PRESENTATIONS.map((p) => {
+            ${presList.map((p) => {
               const vesVal = Number(state.config.precios[p.key]) || 0;
               return `
               <tr>
@@ -1184,6 +1272,13 @@ function tpl_admin_precios() {
                 </td>
                 <td>
                   ${tpl_price_conversions(vesVal)}
+                </td>
+                <td style="text-align:center">
+                  ${presList.length > 1 ? `
+                    <button class="perf-iconbtn danger xs" data-action="remove-pres" data-key="${p.key}" title="Eliminar presentación">
+                      <i data-lucide="trash-2" size="13"></i>
+                    </button>
+                  ` : ""}
                 </td>
               </tr>`;
             }).join("")}
@@ -1198,11 +1293,37 @@ function tpl_admin_precios() {
               <td>
                 ${tpl_price_conversions(Number(state.config.precios.refill) || 0)}
               </td>
+              <td></td>
             </tr>
           </tbody>
         </table>
       </div>
-      <div class="perf-card-hint" style="margin-top:12px;font-size:11.5px;color:rgba(248,250,252,0.5)">* Los cambios se guardan y sincronizan automáticamente en tiempo real con Firebase en la nube.</div>
+      <div class="perf-card-hint" style="margin-top:12px;font-size:11.5px;color:rgba(248,250,252,0.5)">* Los cambios de precios se guardan y sincronizan automáticamente en tiempo real con Firebase en la nube.</div>
+    </div>
+
+    <!-- Formulario para Agregar Nueva Presentación -->
+    <div class="perf-card">
+      <div class="perf-card-title"><i data-lucide="plus-circle" class="perf-drop" size="16"></i> Agregar Nueva Presentación / Envase</div>
+      <div class="perf-card-hint">Crea una nueva opción (ej: Vidrio 100ml, Plástico 20ml, Decant 10ml). Los mililitros que asignes se descontarán automáticamente del stock de cada esencia cuando un cliente haga un pedido.</div>
+      
+      <div class="perf-row" style="margin-top:10px">
+        <div class="perf-field" style="flex:2">
+          <label class="perf-label"><span>Nombre / Tipo</span></label>
+          <input class="perf-input text" placeholder="Ej: Vidrio Lujo, Decant, Atomizador..." value="${esc(state.newPres.label)}" data-action="input-newpres" data-field="label" />
+        </div>
+        <div class="perf-field" style="flex:1">
+          <label class="perf-label"><span>Mililitros (ml)</span></label>
+          <input class="perf-input" inputmode="numeric" placeholder="Ej: 100" value="${esc(state.newPres.ml)}" data-action="input-newpres" data-field="ml" />
+        </div>
+        <div class="perf-field" style="flex:1.2">
+          <label class="perf-label"><span>Precio Base (Bs.)</span></label>
+          <input class="perf-input" inputmode="decimal" placeholder="Ej: 22000" value="${esc(state.newPres.precioBs)}" data-action="input-newpres" data-field="precioBs" />
+        </div>
+      </div>
+
+      <button class="perf-btn gold" style="margin-top:12px;width:100%" data-action="submit-newpres">
+        <i data-lucide="plus" size="15"></i> Agregar esta Presentación al Catálogo
+      </button>
     </div>
   </div>`;
 }
@@ -1451,7 +1572,7 @@ function tpl_product_card(p) {
     </div>
 
     <div class="perf-chiprow" style="margin-top:10px">
-      ${PRESENTATIONS.map((pr) => `
+      ${getPresentations().map((pr) => `
         <button class="perf-chip ${sel.mode === "envase" && sel.presKey === pr.key ? "active" : ""}" ${pr.ml > p.stockMl ? "disabled" : ""} data-action="select-pres" data-id="${p.id}" data-pres="${pr.key}">${pr.label}</button>
       `).join("")}
       <button class="perf-chip ${sel.mode === "refill" ? "active" : ""}" data-action="select-refill-toggle" data-id="${p.id}">Recarga / Refill</button>
@@ -1820,6 +1941,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         break;
       }
+      case "submit-newpres":
+        addCustomPresentation();
+        break;
+      case "remove-pres":
+        removeCustomPresentation(trigger.dataset.key);
+        break;
       case "send-whatsapp":
         handleSendClick(e);
         break;
@@ -1841,6 +1968,8 @@ document.addEventListener("DOMContentLoaded", () => {
       updateConfigField(el.dataset.field, el.value);
     } else if (action === "input-precio") {
       updatePrecioField(el.dataset.field, el.value);
+    } else if (action === "input-newpres") {
+      state.newPres[el.dataset.field] = el.value;
     } else if (action === "input-newprod") {
       state.newProd[el.dataset.field] = el.value;
     } else if (action === "input-editprod" && state.editingProd) {

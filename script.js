@@ -206,6 +206,10 @@ let state = {
   selection: {}, // productId -> {mode, presKey, refillKey}
   cartOpen: false,
   cartBankOpen: false, // Desplegable de datos bancarios dentro del carrito
+  paymentReceipt: null, // Captura de pago subida por el cliente { name, dataUrl, uploading }
+  adminOrders: [], // Pedidos cargados bajo demanda desde Firestore
+  loadingOrders: false, // Estado de carga diferida
+  viewReceiptModal: null, // Modal para ver la captura a tamaño completo
   toast: null,
   toastTimer: null,
   newProd: {
@@ -1049,6 +1053,57 @@ function buildWhatsAppUrl() {
   return `https://wa.me/${digits}?text=${encodeURIComponent(buildWhatsAppMessage())}`;
 }
 
+// Comprimir imagen de captura de pago antes de guardarla en Firebase
+function handlePaymentReceiptFile(file) {
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) {
+    showToast("La captura es muy pesada. Usa una menor a 8MB.");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      // Redimensionar si es muy grande para optimizar Firestore (máx 1000px de ancho/alto)
+      const maxDim = 1000;
+      let width = img.width;
+      let height = img.height;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // Calidad JPEG comprimida al 70% (~80-150KB)
+      const compressedBase64 = canvas.toDataURL("image/jpeg", 0.7);
+      state.paymentReceipt = {
+        name: file.name,
+        dataUrl: compressedBase64
+      };
+      showToast("Captura de pago cargada con éxito");
+      render();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removePaymentReceipt() {
+  state.paymentReceipt = null;
+  render();
+}
+
 async function handleSendClick(e) {
   if (!state.config.whatsapp) {
     e.preventDefault();
@@ -1058,6 +1113,42 @@ async function handleSendClick(e) {
   const lines = cartLines();
   if (lines.length === 0) { e.preventDefault(); return; }
 
+  const t = totals();
+  const disc = discountApplied();
+  const orderId = uid();
+
+  // 1. Guardar el pedido en Firestore (colección 'orders')
+  const orderData = {
+    id: orderId,
+    createdAt: Date.now(),
+    status: "sin_pagar", // 'sin_pagar' | 'pagado'
+    items: lines.map((l) => ({
+      productId: l.product.id,
+      nombre: l.product.nombre,
+      imagen: l.product.imagen || PLACEHOLDER_IMG,
+      sizeKey: l.sizeKey,
+      mode: l.mode,
+      sizeLabel: sizeLabel(l.mode, l.sizeKey),
+      qty: l.qty,
+      unitVES: l.unitVES,
+      subVES: l.subVES
+    })),
+    totalItems: cartCount(),
+    vesTotal: t.ves,
+    usdTotal: t.usd,
+    discountApplied: disc,
+    paymentReceipt: state.paymentReceipt ? state.paymentReceipt.dataUrl : ""
+  };
+
+  if (db) {
+    try {
+      await db.collection("orders").doc(orderId).set(orderData);
+    } catch (err) {
+      console.warn("Error guardando pedido en Firebase:", err);
+    }
+  }
+
+  // 2. Descontar stock de esencias
   lines.forEach((l) => {
     const p = state.inventory.find((x) => x.id === l.product.id);
     const consumedMl = l.info.ml * l.qty;
@@ -1070,8 +1161,44 @@ async function handleSendClick(e) {
   });
 
   state.cart = {};
+  state.paymentReceipt = null;
   state.cartOpen = false;
-  showToast("Pedido generado, abriendo WhatsApp...");
+  showToast("¡Pedido registrado! Abriendo WhatsApp...");
+}
+
+// Carga diferida de pedidos (solo cuando el admin consulta la pestaña 'pedidos')
+async function fetchAdminOrders() {
+  if (!db || !state.isAuthenticated) return;
+  state.loadingOrders = true;
+  render();
+
+  try {
+    const snapshot = await db.collection("orders").orderBy("createdAt", "desc").limit(100).get();
+    const orders = [];
+    snapshot.forEach((doc) => {
+      orders.push(doc.data());
+    });
+    state.adminOrders = orders;
+  } catch (err) {
+    console.error("Error consultando pedidos:", err);
+    showToast("Error al cargar pedidos: " + err.message);
+  } finally {
+    state.loadingOrders = false;
+    render();
+  }
+}
+
+async function updateOrderStatus(orderId, newStatus) {
+  if (!db || !state.isAuthenticated) return;
+  try {
+    await db.collection("orders").doc(orderId).update({ status: newStatus });
+    const ord = state.adminOrders.find((o) => o.id === orderId);
+    if (ord) ord.status = newStatus;
+    showToast(`Pedido marcado como: ${newStatus === "pagado" ? "PAGADO" : "SIN PAGAR"}`);
+    render();
+  } catch (err) {
+    showToast("Error actualizando estatus: " + err.message);
+  }
 }
 
 // ---------------- Autocompletado y Búsqueda con 1s de Espera (Debounce) ----------------
@@ -1203,6 +1330,7 @@ function tpl_login() {
 
 function tpl_admin() {
   const subtabs = [
+    ["pedidos", "Pedidos"],
     ["tasas", "Tasas"],
     ["precios", "Precios (Bs.)"],
     ["inventario", "Inventario"],
@@ -1210,8 +1338,12 @@ function tpl_admin() {
   ];
   return `
   <div class="perf-subtabs">
-    ${subtabs.map(([k, label]) => `<button class="perf-subtab ${state.adminSub === k ? "active" : ""}" data-action="set-adminsub" data-sub="${k}">${label}</button>`).join("")}
+    ${subtabs.map(([k, label]) => `<button class="perf-subtab ${state.adminSub === k ? "active" : ""}" data-action="set-adminsub" data-sub="${k}">
+      ${k === "pedidos" ? `<i data-lucide="receipt" size="14" style="margin-right:4px"></i>` : ""}
+      ${label}
+    </button>`).join("")}
   </div>
+  ${state.adminSub === "pedidos" ? tpl_admin_pedidos() : ""}
   ${state.adminSub === "tasas" ? tpl_admin_tasas() : ""}
   ${state.adminSub === "precios" ? tpl_admin_precios() : ""}
   ${state.adminSub === "inventario" ? tpl_admin_inventario() : ""}
@@ -1701,6 +1833,138 @@ function tpl_admin_datos() {
   </div>`;
 }
 
+function tpl_admin_pedidos() {
+  if (state.loadingOrders) {
+    return `
+    <div class="perf-section">
+      <div class="perf-card" style="text-align:center;padding:40px 20px">
+        <i data-lucide="refresh-cw" class="perf-spin" size="30" style="color:var(--gold);margin-bottom:12px"></i>
+        <div style="font-weight:700;font-size:15px;color:#ffffff">Cargando pedidos de la nube...</div>
+        <div style="font-size:12px;color:rgba(248,250,252,0.5);margin-top:4px">Consultando Firestore bajo demanda</div>
+      </div>
+    </div>`;
+  }
+
+  const orders = state.adminOrders || [];
+
+  return `
+  <div class="perf-section">
+    <div class="perf-orders-toolbar">
+      <div>
+        <div class="perf-orders-title"><i data-lucide="inbox" size="18"></i> Gestión de Pedidos (${orders.length})</div>
+        <div class="perf-orders-subtitle">Verifica los comprobantes bancarios y actualiza el estado de cada pago</div>
+      </div>
+      <button class="perf-btn gold sm" data-action="refresh-orders" title="Actualizar pedidos de la nube">
+        <i data-lucide="refresh-cw" size="14"></i> Actualizar
+      </button>
+    </div>
+
+    ${orders.length === 0 ? `
+      <div class="perf-card">
+        <div class="perf-empty">
+          <i data-lucide="shopping-bag" size="32"></i>
+          <div class="perf-empty-title">Sin pedidos registrados</div>
+          <div class="perf-empty-sub">Cuando los clientes pulsen "Enviar pedido por WhatsApp" en el catálogo, sus pedidos y capturas de pago aparecerán aquí.</div>
+        </div>
+      </div>
+    ` : `
+      <div class="perf-orders-list">
+        ${orders.map((ord) => {
+          const isPaid = ord.status === "pagado";
+          const dateStr = ord.createdAt ? new Date(ord.createdAt).toLocaleString("es-VE", { dateStyle: "short", timeStyle: "short" }) : "Reciente";
+          const items = ord.items || [];
+          const totalQty = ord.totalItems || items.reduce((s, i) => s + (i.qty || 1), 0);
+
+          return `
+          <div class="perf-order-card ${isPaid ? "paid" : "unpaid"}">
+            <div class="perf-order-header">
+              <div class="perf-order-id-wrap">
+                <span class="perf-order-id">#${String(ord.id).slice(-6).toUpperCase()}</span>
+                <span class="perf-order-date">${dateStr}</span>
+              </div>
+              <div class="perf-order-status-selector">
+                <select class="perf-status-select ${isPaid ? "paid" : "unpaid"}" data-action="change-order-status" data-id="${ord.id}">
+                  <option value="sin_pagar" ${!isPaid ? "selected" : ""}>⏳ Sin pagar</option>
+                  <option value="pagado" ${isPaid ? "selected" : ""}>✅ Pagado</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="perf-order-body">
+              <div class="perf-order-products-row">
+                <!-- Miniaturas agrupadas de los perfumes pedidos -->
+                <div class="perf-order-thumbs-cluster">
+                  ${items.slice(0, 4).map((it) => `
+                    <img src="${it.imagen || PLACEHOLDER_IMG}" class="perf-order-cluster-img" alt="${esc(it.nombre)}" title="${esc(it.nombre)} x${it.qty}" onerror="this.onerror=null;this.src='${PLACEHOLDER_IMG}'" />
+                  `).join("")}
+                  ${items.length > 4 ? `
+                    <span class="perf-order-cluster-more">+${items.length - 4}</span>
+                  ` : ""}
+                </div>
+
+                <!-- Detalle de texto de productos pedidos -->
+                <div class="perf-order-details-col">
+                  <div class="perf-order-item-count">
+                    <strong>${totalQty} ${totalQty === 1 ? "producto pedido" : "productos pedidos"}</strong>
+                  </div>
+                  <div class="perf-order-items-snippet">
+                    ${items.map((it) => `${esc(it.nombre)} (${it.sizeLabel || it.mode} x${it.qty})`).join(", ")}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Fila de Total a pagar y Botón de Captura -->
+              <div class="perf-order-foot-row">
+                <div class="perf-order-total-block">
+                  <span class="lbl">Total a pagar:</span>
+                  <div class="perf-order-ves">Bs. ${fmt(ord.vesTotal || 0)}</div>
+                  <span class="perf-order-usd">≈ $${fmt(ord.usdTotal || 0)} BCV</span>
+                </div>
+
+                <div class="perf-order-receipt-action">
+                  ${ord.paymentReceipt ? `
+                    <button type="button" class="perf-btn blush sm" data-action="view-receipt" data-src="${ord.paymentReceipt}">
+                      <i data-lucide="eye" size="14"></i> Ver captura de pantalla
+                    </button>
+                  ` : `
+                    <span class="perf-badge-no-receipt"><i data-lucide="image-off" size="12"></i> Sin captura</span>
+                  `}
+                </div>
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    `}
+  </div>`;
+}
+
+function tpl_receipt_modal() {
+  const src = state.viewReceiptModal;
+  if (!src) return "";
+
+  return `
+  <div class="perf-modal-backdrop" data-action="close-receipt-modal">
+    <div class="perf-modal-box perf-receipt-lightbox" onclick="event.stopPropagation()">
+      <div class="perf-lightbox-head">
+        <div style="font-weight:700;font-size:15px;color:#ffffff;display:flex;align-items:center;gap:6px">
+          <i data-lucide="receipt" size="16" style="color:var(--gold)"></i> Comprobante de Pago
+        </div>
+        <button class="perf-iconbtn" data-action="close-receipt-modal"><i data-lucide="x" size="17"></i></button>
+      </div>
+      <div class="perf-lightbox-body">
+        <img src="${src}" class="perf-lightbox-img" alt="Comprobante de pago" />
+      </div>
+      <div class="perf-lightbox-foot">
+        <a href="${src}" download="comprobante_pago.jpg" class="perf-btn ghost sm" target="_blank" rel="noopener noreferrer">
+          <i data-lucide="download" size="14"></i> Descargar imagen
+        </a>
+        <button class="perf-btn gold sm" data-action="close-receipt-modal">Cerrar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function tpl_product_card(p) {
   const sel = getSelection(p.id);
   const sizeKey = sel.mode === "refill" ? sel.refillKey : sel.presKey;
@@ -1984,6 +2248,25 @@ function tpl_cartsheet() {
               `}
             </div>
           ` : ""}
+        <!-- Botón para Subir Captura de Pago -->
+        <div class="perf-cart-receipt-section">
+          ${state.paymentReceipt ? `
+            <div class="perf-receipt-preview-box">
+              <img src="${state.paymentReceipt.dataUrl}" alt="Comprobante de pago" class="perf-receipt-thumb" data-action="view-receipt" data-src="${state.paymentReceipt.dataUrl}" title="Toca para ampliar" />
+              <div class="perf-receipt-info">
+                <div class="perf-receipt-title"><i data-lucide="check-circle-2" size="14" style="color:var(--ok)"></i> Captura adjunta</div>
+                <div class="perf-receipt-sub">Se enviará junto a tu pedido para verificación</div>
+              </div>
+              <button type="button" class="perf-iconbtn danger xs" data-action="remove-receipt" title="Quitar comprobante">
+                <i data-lucide="trash-2" size="14"></i>
+              </button>
+            </div>
+          ` : `
+            <label class="perf-upload-receipt-btn" for="cart-receipt-input">
+              <i data-lucide="image" size="15"></i> Subir captura de pago (opcional)
+            </label>
+            <input type="file" id="cart-receipt-input" class="perf-hidden-file" accept="image/*" data-action="upload-payment-receipt" />
+          `}
         </div>
 
         <a class="perf-btn gold full" style="margin-top:12px;text-decoration:none" href="${buildWhatsAppUrl()}" target="_blank" rel="noopener noreferrer" data-action="send-whatsapp">
@@ -2034,6 +2317,7 @@ function render() {
   app.innerHTML = `
     ${tpl_toast()}
     ${tpl_outofstock_modal()}
+    ${tpl_receipt_modal()}
     ${tpl_header()}
     ${state.route === "login" ? tpl_login() : ""}
     ${state.route === "admin" && state.isAuthenticated ? tpl_admin() : ""}
@@ -2115,7 +2399,11 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "set-adminsub":
         state.adminSub = trigger.dataset.sub;
-        render();
+        if (state.adminSub === "pedidos" && state.adminOrders.length === 0) {
+          fetchAdminOrders();
+        } else {
+          render();
+        }
         break;
       case "trigger-upload":
         document.getElementById("newprod-file")?.click();
@@ -2240,6 +2528,20 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         break;
       }
+      case "refresh-orders":
+        fetchAdminOrders();
+        break;
+      case "view-receipt":
+        state.viewReceiptModal = trigger.dataset.src;
+        render();
+        break;
+      case "close-receipt-modal":
+        state.viewReceiptModal = null;
+        render();
+        break;
+      case "remove-receipt":
+        removePaymentReceipt();
+        break;
       case "close-outofstock-modal":
         state.outOfStockModal = null;
         render();
@@ -2286,6 +2588,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = e.target;
     if (el.dataset.action === "upload-image") handleImageFile(el.files && el.files[0]);
     if (el.dataset.action === "upload-edit-image") handleEditImageFile(el.files && el.files[0]);
+    if (el.dataset.action === "upload-payment-receipt") handlePaymentReceiptFile(el.files && el.files[0]);
+    if (el.dataset.action === "change-order-status") {
+      updateOrderStatus(el.dataset.id, el.value);
+    }
     if (el.dataset.action === "change-admin-refill-ml") {
       state.adminRefillMl = el.value;
       render();

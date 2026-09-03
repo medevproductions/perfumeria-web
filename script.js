@@ -1921,15 +1921,15 @@ function tpl_cartsheet() {
         <div class="perf-total-row"><span>Referencia en USD</span><span>$${fmt(t.usd)} <span class="perf-bcv-badge">BCV</span></span></div>
 
         <!-- Botón Desplegable de Datos Bancarios / Pago Móvil -->
-        ${(state.config.bancoNombre || state.config.bancoTelefono || state.config.bancoCedula || state.config.bancoCuenta) ? `
-          <div class="perf-cart-bank-section">
-            <button type="button" class="perf-cart-bank-toggle" data-action="toggle-cart-bank">
-              <span><i data-lucide="credit-card" size="15"></i> Ver datos bancarios para pagar</span>
-              <i data-lucide="${state.cartBankOpen ? "chevron-up" : "chevron-down"}" size="15"></i>
-            </button>
+        <div class="perf-cart-bank-section">
+          <button type="button" class="perf-cart-bank-toggle" data-action="toggle-cart-bank">
+            <span><i data-lucide="credit-card" size="15"></i> Ver datos bancarios para pagar</span>
+            <i data-lucide="${state.cartBankOpen ? "chevron-up" : "chevron-down"}" size="15"></i>
+          </button>
 
-            ${state.cartBankOpen ? `
-              <div class="perf-cart-bank-details">
+          ${state.cartBankOpen ? `
+            <div class="perf-cart-bank-details">
+              ${(state.config.bancoNombre || state.config.bancoTelefono || state.config.bancoCedula || state.config.bancoCuenta) ? `
                 ${state.config.bancoNombre ? `
                   <div class="perf-bank-field-row">
                     <div class="perf-bank-field-info">
@@ -1977,10 +1977,14 @@ function tpl_cartsheet() {
                     </button>
                   </div>
                 ` : ""}
-              </div>
-            ` : ""}
-          </div>
-        ` : ""}
+              ` : `
+                <div style="font-size:12.5px;color:rgba(248,250,252,0.65);padding:6px 4px;text-align:center">
+                  ${state.config.banco ? esc(state.config.banco) : "Configura los datos bancarios en el Panel Admin > Datos & Banco para que aparezcan aquí con botones de copiar."}
+                </div>
+              `}
+            </div>
+          ` : ""}
+        </div>
 
         <a class="perf-btn gold full" style="margin-top:12px;text-decoration:none" href="${buildWhatsAppUrl()}" target="_blank" rel="noopener noreferrer" data-action="send-whatsapp">
           <i data-lucide="send" size="16"></i> Enviar pedido por WhatsApp

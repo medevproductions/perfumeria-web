@@ -289,10 +289,58 @@ async function syncLiveRates(silent = false) {
   if (!silent) render();
 
   try {
-    // Tasas reales vigentes
-    state.config.bcv = "798.33";
-    state.config.binance = "937.50";
-    state.config.cop = "3210.38";
+    let bcvVal = null;
+    let binanceVal = null;
+    let copVal = null;
+
+    // 1. Intentar consultar endpoint serverless /api/rates
+    try {
+      const res = await fetch("/api/rates?t=" + Date.now());
+      if (res.ok) {
+        const json = await res.json();
+        if (json.bcv) bcvVal = String(json.bcv);
+        if (json.binance) binanceVal = String(json.binance);
+        if (json.cop) copVal = String(json.cop);
+      }
+    } catch (eApi) {}
+
+    // 2. Si no se obtuvo BCV, consultar DolarApi oficial
+    if (!bcvVal) {
+      try {
+        const resBcv = await fetch("https://ve.dolarapi.com/v1/dolares/oficial");
+        if (resBcv.ok) {
+          const d = await resBcv.json();
+          if (d && d.promedio) bcvVal = String(Number(d.promedio).toFixed(2));
+        }
+      } catch (eBcv) {}
+    }
+
+    // 3. Si no se obtuvo Binance, consultar DolarApi paralelo
+    if (!binanceVal) {
+      try {
+        const resParalelo = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo");
+        if (resParalelo.ok) {
+          const d = await resParalelo.json();
+          if (d && d.promedio) binanceVal = String(Number(d.promedio).toFixed(2));
+        }
+      } catch (eBin) {}
+    }
+
+    // 4. Si no se obtuvo COP, consultar exchange rate API
+    if (!copVal) {
+      try {
+        const resCop = await fetch("https://open.er-api.com/v6/latest/USD");
+        if (resCop.ok) {
+          const d = await resCop.json();
+          if (d && d.rates && d.rates.COP) copVal = String(Number(d.rates.COP).toFixed(2));
+        }
+      } catch (eCop) {}
+    }
+
+    // Aplicar los nuevos valores si se obtuvieron, o mantener los existentes
+    if (bcvVal) state.config.bcv = bcvVal;
+    if (binanceVal) state.config.binance = binanceVal;
+    if (copVal) state.config.cop = copVal;
     state.config.last_rates_update = String(Math.floor(Date.now() / 1000));
 
     saveLocalBackup();
@@ -307,10 +355,10 @@ async function syncLiveRates(silent = false) {
     }
 
     if (!silent) {
-      showToast("¡Tasas actualizadas a valores reales!");
+      showToast(`¡Tasas en vivo actualizadas! (BCV: ${state.config.bcv} Bs.)`);
     }
   } catch (e) {
-    if (!silent) showToast("Error al sincronizar: " + e.message);
+    if (!silent) showToast("Error al sincronizar tasas: " + e.message);
   }
 
   state.syncingRates = false;
@@ -345,6 +393,8 @@ function initFirebaseListeners() {
         ...data,
         precios: { ...DEFAULT_CONFIG.precios, ...(data.precios || {}) }
       };
+      // Verificar si las tasas tienen más de 1 hora de antigüedad
+      checkPeriodicRateSync();
     } else {
       db.collection("settings").doc("main").set(DEFAULT_CONFIG, { merge: true });
     }

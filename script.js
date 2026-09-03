@@ -1148,18 +1148,7 @@ async function handleSendClick(e) {
     }
   }
 
-  // 2. Descontar stock de esencias
-  lines.forEach((l) => {
-    const p = state.inventory.find((x) => x.id === l.product.id);
-    const consumedMl = l.info.ml * l.qty;
-    if (p) {
-      const nextStock = Math.max(0, p.stockMl - consumedMl);
-      if (db) {
-        db.collection("products").doc(p.id).update({ stockMl: nextStock });
-      }
-    }
-  });
-
+  // El stock ya NO se descuenta aquí, se descuenta únicamente cuando el admin verifique el pago y cambie el estado a 'pagado'
   state.cart = {};
   state.paymentReceipt = null;
   state.cartOpen = false;
@@ -1190,11 +1179,44 @@ async function fetchAdminOrders() {
 
 async function updateOrderStatus(orderId, newStatus) {
   if (!db || !state.isAuthenticated) return;
+  const ord = state.adminOrders.find((o) => o.id === orderId);
+  if (!ord) return;
+
+  const prevStatus = ord.status;
+  if (prevStatus === newStatus) return;
+
   try {
+    // 1. Si pasa a "pagado", descontamos los ml del inventario
+    if (newStatus === "pagado" && prevStatus !== "pagado") {
+      const items = ord.items || [];
+      for (const it of items) {
+        const p = state.inventory.find((x) => x.id === it.productId);
+        const info = sizeInfo(it.mode, it.sizeKey);
+        const mlToDeduct = (info?.ml || 30) * (it.qty || 1);
+        if (p) {
+          const nextStock = Math.max(0, p.stockMl - mlToDeduct);
+          await db.collection("products").doc(p.id).update({ stockMl: nextStock });
+        }
+      }
+      showToast("¡Pago verificado! Stock de mililitros descontado");
+    }
+    // 2. Si se revierte de "pagado" a "sin_pagar", se restaura el stock correspondiente
+    else if (newStatus === "sin_pagar" && prevStatus === "pagado") {
+      const items = ord.items || [];
+      for (const it of items) {
+        const p = state.inventory.find((x) => x.id === it.productId);
+        const info = sizeInfo(it.mode, it.sizeKey);
+        const mlToRestore = (info?.ml || 30) * (it.qty || 1);
+        if (p) {
+          const nextStock = p.stockMl + mlToRestore;
+          await db.collection("products").doc(p.id).update({ stockMl: nextStock });
+        }
+      }
+      showToast("Estado cambiado a Sin pagar (stock restaurado)");
+    }
+
     await db.collection("orders").doc(orderId).update({ status: newStatus });
-    const ord = state.adminOrders.find((o) => o.id === orderId);
-    if (ord) ord.status = newStatus;
-    showToast(`Pedido marcado como: ${newStatus === "pagado" ? "PAGADO" : "SIN PAGAR"}`);
+    ord.status = newStatus;
     render();
   } catch (err) {
     showToast("Error actualizando estatus: " + err.message);

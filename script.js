@@ -1113,6 +1113,18 @@ async function handleSendClick(e) {
   const lines = cartLines();
   if (lines.length === 0) { e.preventDefault(); return; }
 
+  // Exigir captura de pago de forma obligatoria
+  if (!state.paymentReceipt || !state.paymentReceipt.dataUrl) {
+    e.preventDefault();
+    showToast("Debes subir la captura de pago para continuar con el pedido");
+    const receiptBtn = document.querySelector(".perf-upload-receipt-btn");
+    if (receiptBtn) {
+      receiptBtn.classList.add("shake");
+      setTimeout(() => receiptBtn.classList.remove("shake"), 600);
+    }
+    return;
+  }
+
   const t = totals();
   const disc = discountApplied();
   const orderId = uid();
@@ -2270,22 +2282,22 @@ function tpl_cartsheet() {
               `}
             </div>
           ` : ""}
-        <!-- Botón para Subir Captura de Pago -->
+        <!-- Botón para Subir Captura de Pago (Requerida) -->
         <div class="perf-cart-receipt-section">
           ${state.paymentReceipt ? `
             <div class="perf-receipt-preview-box">
               <img src="${state.paymentReceipt.dataUrl}" alt="Comprobante de pago" class="perf-receipt-thumb" data-action="view-receipt" data-src="${state.paymentReceipt.dataUrl}" title="Toca para ampliar" />
               <div class="perf-receipt-info">
                 <div class="perf-receipt-title"><i data-lucide="check-circle-2" size="14" style="color:var(--ok)"></i> Captura adjunta</div>
-                <div class="perf-receipt-sub">Se enviará junto a tu pedido para verificación</div>
+                <div class="perf-receipt-sub">Comprobante listo para verificación del admin</div>
               </div>
-              <button type="button" class="perf-iconbtn danger xs" data-action="remove-receipt" title="Quitar comprobante">
+              <button type="button" class="perf-iconbtn danger xs" data-action="remove-receipt" title="Cambiar comprobante">
                 <i data-lucide="trash-2" size="14"></i>
               </button>
             </div>
           ` : `
-            <label class="perf-upload-receipt-btn" for="cart-receipt-input">
-              <i data-lucide="image" size="15"></i> Subir captura de pago (opcional)
+            <label class="perf-upload-receipt-btn required" for="cart-receipt-input">
+              <i data-lucide="upload-cloud" size="16"></i> Subir captura de pago (obligatorio)
             </label>
             <input type="file" id="cart-receipt-input" class="perf-hidden-file" accept="image/*" data-action="upload-payment-receipt" />
           `}

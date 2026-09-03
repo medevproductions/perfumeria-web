@@ -1654,21 +1654,32 @@ body{
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 10px 14px;
+  padding: 11px 14px;
   border-radius: 12px;
-  background: rgba(56, 189, 248, 0.1);
-  border: 1.5px dashed var(--accent-cyan);
-  color: var(--accent-cyan);
+  background: rgba(229, 184, 105, 0.1);
+  border: 1.5px dashed var(--gold);
+  color: var(--gold-soft);
   font-family: 'Manrope', sans-serif;
   font-size: 12.5px;
-  font-weight: 700;
+  font-weight: 800;
   cursor: pointer;
   transition: all .15s ease;
   text-align: center;
 }
 .perf-upload-receipt-btn:hover{
-  background: rgba(56, 189, 248, 0.2);
+  background: rgba(229, 184, 105, 0.2);
+  color: #ffffff;
   transform: translateY(-1px);
+}
+.perf-upload-receipt-btn.shake{
+  animation: receiptShake 0.4s ease;
+  border-color: var(--warn);
+  color: var(--warn);
+}
+@keyframes receiptShake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-6px); }
+  40%, 80% { transform: translateX(6px); }
 }
 .perf-receipt-preview-box{
   display: flex;

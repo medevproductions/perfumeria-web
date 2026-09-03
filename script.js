@@ -210,6 +210,7 @@ let state = {
   adminOrders: [], // Pedidos cargados bajo demanda desde Firestore
   loadingOrders: false, // Estado de carga diferida
   viewReceiptModal: null, // Modal para ver la captura a tamaño completo
+  notificationBanner: null, // Notificación emergente estilo banner superior { title, message }
   toast: null,
   toastTimer: null,
   newProd: {
@@ -1091,7 +1092,19 @@ function handlePaymentReceiptFile(file) {
         name: file.name,
         dataUrl: compressedBase64
       };
-      showToast("Captura de pago cargada con éxito");
+
+      // Disparar pop-up que baja desde arriba notificando al cliente
+      state.notificationBanner = {
+        title: "¡Captura de pago adjuntada!",
+        message: "Envía el pedido a WhatsApp para notificarnos de tu orden y verificar tu pago."
+      };
+      setTimeout(() => {
+        if (state.notificationBanner) {
+          state.notificationBanner = null;
+          render();
+        }
+      }, 7000);
+
       render();
     };
     img.src = e.target.result;
@@ -2282,22 +2295,22 @@ function tpl_cartsheet() {
               `}
             </div>
           ` : ""}
-        <!-- Botón para Subir Captura de Pago (Requerida) -->
+        <!-- Botón para Subir Captura de Pago -->
         <div class="perf-cart-receipt-section">
           ${state.paymentReceipt ? `
             <div class="perf-receipt-preview-box">
               <img src="${state.paymentReceipt.dataUrl}" alt="Comprobante de pago" class="perf-receipt-thumb" data-action="view-receipt" data-src="${state.paymentReceipt.dataUrl}" title="Toca para ampliar" />
               <div class="perf-receipt-info">
-                <div class="perf-receipt-title"><i data-lucide="check-circle-2" size="14" style="color:var(--ok)"></i> Captura adjunta</div>
-                <div class="perf-receipt-sub">Comprobante listo para verificación del admin</div>
+                <div class="perf-receipt-title"><i data-lucide="check-circle-2" size="14" style="color:var(--ok)"></i> Captura adjuntada</div>
+                <div class="perf-receipt-sub">Comprobante listo para enviar con tu orden</div>
               </div>
               <button type="button" class="perf-iconbtn danger xs" data-action="remove-receipt" title="Cambiar comprobante">
                 <i data-lucide="trash-2" size="14"></i>
               </button>
             </div>
           ` : `
-            <label class="perf-upload-receipt-btn required" for="cart-receipt-input">
-              <i data-lucide="upload-cloud" size="16"></i> Subir captura de pago (obligatorio)
+            <label class="perf-upload-receipt-btn" for="cart-receipt-input">
+              <i data-lucide="upload-cloud" size="16"></i> Subir captura de pago
             </label>
             <input type="file" id="cart-receipt-input" class="perf-hidden-file" accept="image/*" data-action="upload-payment-receipt" />
           `}
@@ -2335,6 +2348,27 @@ function tpl_outofstock_modal() {
   </div>`;
 }
 
+function tpl_notification_banner() {
+  const nb = state.notificationBanner;
+  if (!nb) return "";
+
+  return `
+  <div class="perf-top-banner-wrapper">
+    <div class="perf-top-banner">
+      <div class="perf-top-banner-icon">
+        <i data-lucide="bell-ring" size="20"></i>
+      </div>
+      <div class="perf-top-banner-content">
+        <div class="perf-top-banner-title">${esc(nb.title)}</div>
+        <div class="perf-top-banner-desc">${esc(nb.message)}</div>
+      </div>
+      <button class="perf-top-banner-close" data-action="close-notification-banner" title="Cerrar">
+        <i data-lucide="x" size="16"></i>
+      </button>
+    </div>
+  </div>`;
+}
+
 function tpl_toast() {
   if (!state.toast) return "";
   return `<div class="perf-toast">${esc(state.toast)}</div>`;
@@ -2349,6 +2383,7 @@ function render() {
   const selEnd = active && typeof active.selectionEnd === "number" ? active.selectionEnd : null;
 
   app.innerHTML = `
+    ${tpl_notification_banner()}
     ${tpl_toast()}
     ${tpl_outofstock_modal()}
     ${tpl_receipt_modal()}
@@ -2575,6 +2610,10 @@ document.addEventListener("DOMContentLoaded", () => {
         break;
       case "remove-receipt":
         removePaymentReceipt();
+        break;
+      case "close-notification-banner":
+        state.notificationBanner = null;
+        render();
         break;
       case "close-outofstock-modal":
         state.outOfStockModal = null;

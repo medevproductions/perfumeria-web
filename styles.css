@@ -1487,6 +1487,99 @@ body{
   margin: 10px 0;
 }
 
+/* Sección de Datos Bancarios en el Carrito */
+.perf-cart-bank-section{
+  margin-top: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(229, 184, 105, 0.35);
+  background: rgba(15, 23, 42, 0.7);
+  overflow: hidden;
+}
+.perf-cart-bank-toggle{
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 14px;
+  background: rgba(22, 34, 56, 0.75);
+  border: none;
+  color: var(--gold-soft);
+  font-family: 'Manrope', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  outline: none;
+  transition: all .15s ease;
+}
+.perf-cart-bank-toggle:hover{
+  background: rgba(22, 34, 56, 0.95);
+  color: #ffffff;
+}
+.perf-cart-bank-toggle span{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.perf-cart-bank-details{
+  padding: 10px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid rgba(229, 184, 105, 0.2);
+  animation: fadeIn .2s ease;
+}
+.perf-bank-field-row{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 9px;
+  background: rgba(11, 17, 30, 0.7);
+  border: 1px solid var(--line);
+  gap: 8px;
+}
+.perf-bank-field-info{
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.perf-bank-field-info .lbl{
+  font-size: 9.5px;
+  text-transform: uppercase;
+  color: rgba(248, 250, 252, 0.5);
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+.perf-bank-field-info .val{
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  color: #ffffff;
+  word-break: break-all;
+}
+.perf-copy-btn{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: rgba(229, 184, 105, 0.15);
+  border: 1px solid var(--gold);
+  color: var(--gold-soft);
+  font-family: 'Manrope', sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  outline: none;
+  transition: all .15s ease;
+}
+.perf-copy-btn:hover{
+  background: var(--gold);
+  color: #0b111e;
+  transform: scale(1.03);
+}
+
 /* Modal de Perfume Agotado */
 .perf-modal-backdrop{
   position: fixed;

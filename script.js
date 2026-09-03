@@ -125,7 +125,11 @@ const DEFAULT_CONFIG = {
   cop: "3169.59",
   whatsapp: "",
   negocio: "Perfumería",
-  banco: "",
+  banco: "", // Texto libre retrocompatible
+  bancoNombre: "", // Nombre del banco (escrito manualmente por el admin)
+  bancoTelefono: "", // Número de teléfono para Pago Móvil
+  bancoCedula: "", // Cédula / RIF del titular
+  bancoCuenta: "", // Número de cuenta o datos adicionales
   adminPassword: "admin",
   last_rates_update: "0",
   presentaciones: JSON.parse(JSON.stringify(DEFAULT_PRESENTATIONS)),
@@ -201,6 +205,7 @@ let state = {
   cart: {}, // lineKey -> {productId, mode, sizeKey, qty}
   selection: {}, // productId -> {mode, presKey, refillKey}
   cartOpen: false,
+  cartBankOpen: false, // Desplegable de datos bancarios dentro del carrito
   toast: null,
   toastTimer: null,
   newProd: {
@@ -1023,7 +1028,18 @@ function buildWhatsAppMessage() {
   if (discountApplied()) msg += `\n_Descuento por volumen (3+ unidades): -20%_`;
   msg += `\n\n*Total a pagar:* Bs. ${fmt(t.ves)}`;
   msg += `\n*Referencia en USD (Tasa BCV):* $${fmt(t.usd)}`;
-  if (state.config.banco) msg += `\n\n*Datos para el pago:*\n${state.config.banco}`;
+  let bankDetails = "";
+  if (state.config.bancoNombre || state.config.bancoTelefono || state.config.bancoCedula || state.config.bancoCuenta) {
+    bankDetails = "\n\n*Datos para el pago:*";
+    if (state.config.bancoNombre) bankDetails += `\n• *Banco:* ${state.config.bancoNombre}`;
+    if (state.config.bancoTelefono) bankDetails += `\n• *Teléfono:* ${state.config.bancoTelefono}`;
+    if (state.config.bancoCedula) bankDetails += `\n• *Cédula/RIF:* ${state.config.bancoCedula}`;
+    if (state.config.bancoCuenta) bankDetails += `\n• *Cuenta:* ${state.config.bancoCuenta}`;
+  } else if (state.config.banco) {
+    bankDetails = `\n\n*Datos para el pago:*\n${state.config.banco}`;
+  }
+
+  msg += bankDetails;
   return msg;
 }
 
@@ -1649,11 +1665,30 @@ function tpl_admin_datos() {
       </div>
     </div>
     <div class="perf-card">
-      <div class="perf-card-title"><i data-lucide="landmark" size="16"></i> Datos bancarios / Pago móvil</div>
-      <div class="perf-field">
-        <textarea id="cfg-banco" class="perf-textarea" rows="4" placeholder="Banco, titular, cédula/RIF, número de cuenta o pago móvil..." data-action="input-config" data-field="banco">${esc(state.config.banco)}</textarea>
+      <div class="perf-card-title"><i data-lucide="landmark" size="16"></i> Datos bancarios y Pago Móvil</div>
+      <div class="perf-card-hint" style="margin-bottom:12px">Estos datos se mostrarán en un botón desplegable con opción de copiar en el carrito del cliente y al final del pedido por WhatsApp.</div>
+      
+      <div class="perf-row2">
+        <div class="perf-field">
+          <label class="perf-label"><span>Banco (Nombre de la entidad)</span></label>
+          <input id="cfg-banconombre" class="perf-input text" placeholder="Ej: Banesco, BDV, Mercantil, BNC..." value="${esc(state.config.bancoNombre)}" data-action="input-config" data-field="bancoNombre" />
+        </div>
+        <div class="perf-field">
+          <label class="perf-label"><span>Número de teléfono (Pago Móvil)</span></label>
+          <input id="cfg-bancotelefono" class="perf-input" inputmode="numeric" placeholder="Ej: 04141234567" value="${esc(state.config.bancoTelefono)}" data-action="input-config" data-field="bancoTelefono" />
+        </div>
       </div>
-      <div class="perf-card-hint">Se incluyen automáticamente al final del mensaje de WhatsApp del pedido.</div>
+
+      <div class="perf-row2" style="margin-top:10px">
+        <div class="perf-field">
+          <label class="perf-label"><span>Cédula o RIF</span></label>
+          <input id="cfg-bancocedula" class="perf-input" placeholder="Ej: V-12345678 o J-123456789" value="${esc(state.config.bancoCedula)}" data-action="input-config" data-field="bancoCedula" />
+        </div>
+        <div class="perf-field">
+          <label class="perf-label"><span>Número de cuenta bancaria</span></label>
+          <input id="cfg-bancocuenta" class="perf-input" inputmode="numeric" placeholder="Ej: 0134 0000 00 0000000000" value="${esc(state.config.bancoCuenta)}" data-action="input-config" data-field="bancoCuenta" />
+        </div>
+      </div>
     </div>
     <div class="perf-card">
       <div class="perf-card-title"><i data-lucide="shield" size="16"></i> Seguridad de Administración</div>
@@ -1884,6 +1919,69 @@ function tpl_cartsheet() {
         ${disc ? `<div class="perf-total-row"><span>Subtotal antes de descuento</span><span>Bs. ${fmt(t.vesRaw)}</span></div>` : ""}
         <div class="perf-total-row main"><span>Total a pagar</span><span>Bs. ${fmt(t.ves)}</span></div>
         <div class="perf-total-row"><span>Referencia en USD</span><span>$${fmt(t.usd)} <span class="perf-bcv-badge">BCV</span></span></div>
+
+        <!-- Botón Desplegable de Datos Bancarios / Pago Móvil -->
+        ${(state.config.bancoNombre || state.config.bancoTelefono || state.config.bancoCedula || state.config.bancoCuenta) ? `
+          <div class="perf-cart-bank-section">
+            <button type="button" class="perf-cart-bank-toggle" data-action="toggle-cart-bank">
+              <span><i data-lucide="credit-card" size="15"></i> Ver datos bancarios para pagar</span>
+              <i data-lucide="${state.cartBankOpen ? "chevron-up" : "chevron-down"}" size="15"></i>
+            </button>
+
+            ${state.cartBankOpen ? `
+              <div class="perf-cart-bank-details">
+                ${state.config.bancoNombre ? `
+                  <div class="perf-bank-field-row">
+                    <div class="perf-bank-field-info">
+                      <span class="lbl">Banco</span>
+                      <strong class="val">${esc(state.config.bancoNombre)}</strong>
+                    </div>
+                    <button type="button" class="perf-copy-btn" data-action="copy-text" data-val="${esc(state.config.bancoNombre)}" title="Copiar banco">
+                      <i data-lucide="copy" size="13"></i> Copiar
+                    </button>
+                  </div>
+                ` : ""}
+
+                ${state.config.bancoTelefono ? `
+                  <div class="perf-bank-field-row">
+                    <div class="perf-bank-field-info">
+                      <span class="lbl">Teléfono (Pago Móvil)</span>
+                      <strong class="val">${esc(state.config.bancoTelefono)}</strong>
+                    </div>
+                    <button type="button" class="perf-copy-btn" data-action="copy-text" data-val="${esc(state.config.bancoTelefono)}" title="Copiar teléfono">
+                      <i data-lucide="copy" size="13"></i> Copiar
+                    </button>
+                  </div>
+                ` : ""}
+
+                ${state.config.bancoCedula ? `
+                  <div class="perf-bank-field-row">
+                    <div class="perf-bank-field-info">
+                      <span class="lbl">Cédula / RIF</span>
+                      <strong class="val">${esc(state.config.bancoCedula)}</strong>
+                    </div>
+                    <button type="button" class="perf-copy-btn" data-action="copy-text" data-val="${esc(state.config.bancoCedula)}" title="Copiar cédula">
+                      <i data-lucide="copy" size="13"></i> Copiar
+                    </button>
+                  </div>
+                ` : ""}
+
+                ${state.config.bancoCuenta ? `
+                  <div class="perf-bank-field-row">
+                    <div class="perf-bank-field-info">
+                      <span class="lbl">Número de Cuenta</span>
+                      <strong class="val" style="font-size:12px">${esc(state.config.bancoCuenta)}</strong>
+                    </div>
+                    <button type="button" class="perf-copy-btn" data-action="copy-text" data-val="${esc(state.config.bancoCuenta)}" title="Copiar cuenta">
+                      <i data-lucide="copy" size="13"></i> Copiar
+                    </button>
+                  </div>
+                ` : ""}
+              </div>
+            ` : ""}
+          </div>
+        ` : ""}
+
         <a class="perf-btn gold full" style="margin-top:12px;text-decoration:none" href="${buildWhatsAppUrl()}" target="_blank" rel="noopener noreferrer" data-action="send-whatsapp">
           <i data-lucide="send" size="16"></i> Enviar pedido por WhatsApp
         </a>
@@ -2112,6 +2210,32 @@ document.addEventListener("DOMContentLoaded", () => {
       case "remove-pres":
         removeCustomPresentation(trigger.dataset.key);
         break;
+      case "toggle-cart-bank":
+        state.cartBankOpen = !state.cartBankOpen;
+        render();
+        break;
+      case "copy-text": {
+        const textToCopy = trigger.dataset.val || "";
+        if (textToCopy) {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy).then(() => {
+              showToast(`Copiado: ${textToCopy}`);
+            }).catch(() => {
+              showToast(`Copiado: ${textToCopy}`);
+            });
+          } else {
+            // Fallback manual
+            const ta = document.createElement("textarea");
+            ta.value = textToCopy;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            document.body.removeChild(ta);
+            showToast(`Copiado: ${textToCopy}`);
+          }
+        }
+        break;
+      }
       case "close-outofstock-modal":
         state.outOfStockModal = null;
         render();

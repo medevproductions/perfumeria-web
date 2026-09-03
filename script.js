@@ -217,6 +217,7 @@ let state = {
   },
   editingProd: null,
   outOfStockModal: null, // { productName, remainingMl }
+  adminRefillMl: "30", // mililitros seleccionados en el panel admin para configurar precio
   loginInput: "",
   loginError: "",
   isAuthenticated: false,
@@ -587,11 +588,33 @@ function unitPriceVES(product, mode, sizeKey) {
   if (mode === "refill") {
     const info = sizeInfo(mode, sizeKey);
     const ml = info ? info.ml : 30;
-    // Base de refill en configuración (precio por recarga base de 30ml o proporcional por ml)
-    const baseRefillVES = Number(state.config.precios.refill) || 8000;
-    // El precio de la recarga se calcula proporcionalmente según los ml (ej: base / 30 * ml)
-    const pricePerMl = baseRefillVES / 30;
-    return Math.round(pricePerMl * ml);
+
+    // 1. Si el producto tiene precio personalizado para ese refill
+    if (product && product.precios) {
+      if (Number(product.precios[`refill_${ml}`]) > 0) return Number(product.precios[`refill_${ml}`]);
+      if (ml === 30 && Number(product.precios.refill30) > 0) return Number(product.precios.refill30);
+      if (ml === 35 && Number(product.precios.refill35) > 0) return Number(product.precios.refill35);
+      if (Number(product.precios.refill) > 0) {
+        return Math.round((Number(product.precios.refill) / 30) * ml);
+      }
+    }
+
+    // 2. Si la configuración general tiene precio específico para esta medida en ml
+    if (state.config.precios) {
+      if (Number(state.config.precios[`refill_${ml}`]) > 0) {
+        return Number(state.config.precios[`refill_${ml}`]);
+      }
+      if (ml === 30 && Number(state.config.precios.refill30) > 0) {
+        return Number(state.config.precios.refill30);
+      }
+      if (ml === 35 && Number(state.config.precios.refill35) > 0) {
+        return Number(state.config.precios.refill35);
+      }
+      // 3. Fallback proporcional sobre la base de refill (30ml)
+      const baseRefillVES = Number(state.config.precios.refill) || 8000;
+      return Math.round((baseRefillVES / 30) * ml);
+    }
+    return Math.round((8000 / 30) * ml);
   }
 
   const key = sizeKey;
@@ -1326,24 +1349,69 @@ function tpl_admin_precios() {
                 </td>
               </tr>`;
             }).join("")}
-            <tr>
-              <td>
-                <strong style="color:#ffffff;display:block">Recargas</strong>
-                <span style="font-size:11px;color:var(--accent-cyan)">Base 30ml (30, 35, 50, 60, 100ml)</span>
-              </td>
-              <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">30 - 100 ml</span></td>
-              <td>
-                <input id="precio-refill" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
-              </td>
-              <td>
-                ${tpl_price_conversions(Number(state.config.precios.refill) || 0)}
-              </td>
-              <td></td>
-            </tr>
+            <!-- Fila Interactiva de Precios para Recargas con Desplegable de ML -->
+            ${(() => {
+              const currentRefillMl = parseInt(state.adminRefillMl, 10) || 30;
+              const fieldKey = `refill_${currentRefillMl}`;
+              
+              // Determinar el valor actual: si tiene precio explícito, o si es 30/35 legacy, o cálculo proporcional
+              let currentVal = "";
+              if (state.config.precios && state.config.precios[fieldKey] != null && state.config.precios[fieldKey] !== "") {
+                currentVal = state.config.precios[fieldKey];
+              } else if (currentRefillMl === 30 && state.config.precios && state.config.precios.refill) {
+                currentVal = state.config.precios.refill;
+              } else if (state.config.precios && state.config.precios.refill) {
+                // Cálculo sugerido proporcional si no ha sido guardado
+                currentVal = Math.round((Number(state.config.precios.refill) / 30) * currentRefillMl);
+              }
+
+              const vesNum = Number(currentVal) || 0;
+
+              return `
+              <tr style="background:rgba(56,189,248,0.06);border-top:1px solid var(--line-strong)">
+                <td>
+                  <strong style="color:#ffffff;display:flex;align-items:center;gap:6px">
+                    <i data-lucide="droplet" size="14" style="color:var(--accent-cyan)"></i> Recarga por ML
+                  </strong>
+                  <span style="font-size:11px;color:rgba(248,250,252,0.6)">Selecciona la medida en el desplegable ➔</span>
+                </td>
+                <td>
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <select class="perf-table-input" style="padding:6px 10px;max-width:115px;cursor:pointer;background:var(--navy-dark);border-color:var(--accent-cyan);color:var(--accent-cyan);font-weight:800" data-action="change-admin-refill-ml">
+                      ${[30, 35, 50, 60, 100].map((ml) => `
+                        <option value="${ml}" ${ml === currentRefillMl ? "selected" : ""}>
+                          ${ml} ml
+                        </option>
+                      `).join("")}
+                    </select>
+                  </div>
+                </td>
+                <td>
+                  <input 
+                    id="precio-refill-ml" 
+                    class="perf-table-input" 
+                    inputmode="decimal" 
+                    placeholder="Bs." 
+                    value="${esc(currentVal)}" 
+                    data-action="input-refill-price" 
+                    data-ml="${currentRefillMl}" 
+                    title="Precio en Bs. para recarga de ${currentRefillMl}ml"
+                  />
+                </td>
+                <td>
+                  ${tpl_price_conversions(vesNum)}
+                </td>
+                <td style="text-align:center">
+                  <span class="perf-bcv-badge" style="margin:0;font-size:9px" title="Precio guardado para ${currentRefillMl}ml">
+                    ${currentRefillMl}ml
+                  </span>
+                </td>
+              </tr>`;
+            })()}
           </tbody>
         </table>
       </div>
-      <div class="perf-card-hint" style="margin-top:12px;font-size:11.5px;color:rgba(248,250,252,0.5)">* Los cambios de precios se guardan y sincronizan automáticamente en tiempo real con Firebase en la nube.</div>
+      <div class="perf-card-hint" style="margin-top:12px;font-size:11.5px;color:rgba(248,250,252,0.5)">* Puedes cambiar la medida en el desplegable de Recargas para ajustar el precio individual de cada tamaño (30, 35, 50, 60 y 100ml). Se guarda automáticamente en tiempo real.</div>
     </div>
 
     <!-- Formulario para Agregar Nueva Presentación -->
@@ -2075,8 +2143,12 @@ document.addEventListener("DOMContentLoaded", () => {
       state.newProd[el.dataset.field] = el.value;
     } else if (action === "input-editprod" && state.editingProd) {
       state.editingProd[el.dataset.field] = el.value;
-    } else if (action === "input-editprod-price" && state.editingProd) {
-      state.editingProd.precios[el.dataset.field] = el.value;
+    } else if (action === "input-refill-price") {
+      const ml = el.dataset.ml;
+      updatePrecioField(`refill_${ml}`, el.value);
+      if (ml === "30") {
+        updatePrecioField("refill", el.value);
+      }
     } else if (action === "input-refill-ml") {
       setSelRefillMl(el.dataset.id, el.value);
     }
@@ -2086,6 +2158,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = e.target;
     if (el.dataset.action === "upload-image") handleImageFile(el.files && el.files[0]);
     if (el.dataset.action === "upload-edit-image") handleEditImageFile(el.files && el.files[0]);
+    if (el.dataset.action === "change-admin-refill-ml") {
+      state.adminRefillMl = el.value;
+      render();
+    }
     if (el.dataset.action === "change-refill-select") {
       setSelRefillMl(el.dataset.id, el.value);
     }

@@ -1025,26 +1025,31 @@ function changeCartQty(key, delta) {
 
 function buildWhatsAppMessage() {
   const lines = cartLines();
+  if (lines.length === 0) return "";
   const t = totals();
-  let msg = `*Nuevo pedido — ${state.config.negocio || "Perfumería"}*\n\n`;
-  lines.forEach((l) => {
-    msg += `• ${l.product.nombre} — ${sizeLabel(l.mode, l.sizeKey)} x${l.qty} — Bs. ${fmt(l.subVES)} (≈ $${fmt(l.subUSD)} BCV)\n`;
+  const totalQty = cartCount();
+
+  // Formatear cada línea: "(cantidad) (producto) (n)ml Bs. (precio)"
+  const formattedLines = lines.map((l) => {
+    const mlNum = l.info?.ml || 35;
+    const name = cleanDisplayName(l.product.nombre);
+    return `${l.qty} ${name} ${mlNum}ml Bs. ${fmt(l.subVES)}`;
   });
-  if (discountApplied()) msg += `\n_Descuento por volumen (3+ unidades): -20%_`;
-  msg += `\n\n*Total a pagar:* Bs. ${fmt(t.ves)}`;
-  msg += `\n*Referencia en USD (Tasa BCV):* $${fmt(t.usd)}`;
-  let bankDetails = "";
-  if (state.config.bancoNombre || state.config.bancoTelefono || state.config.bancoCedula || state.config.bancoCuenta) {
-    bankDetails = "\n\n*Datos para el pago:*";
-    if (state.config.bancoNombre) bankDetails += `\n• *Banco:* ${state.config.bancoNombre}`;
-    if (state.config.bancoTelefono) bankDetails += `\n• *Teléfono:* ${state.config.bancoTelefono}`;
-    if (state.config.bancoCedula) bankDetails += `\n• *Cédula/RIF:* ${state.config.bancoCedula}`;
-    if (state.config.bancoCuenta) bankDetails += `\n• *Cuenta:* ${state.config.bancoCuenta}`;
-  } else if (state.config.banco) {
-    bankDetails = `\n\n*Datos para el pago:*\n${state.config.banco}`;
+
+  let msg = "";
+  if (formattedLines.length === 1) {
+    // Un solo producto: (cantidad) producto (n)ml Bs. (precio) = $ (precio en dolares) bcv
+    msg = `${formattedLines[0]} = $${fmt(t.usd)} bcv`;
+  } else {
+    // Múltiples productos: item1 + item2 + ... = (cantidad total) Bs. (precio total) = $(precio en dolares) bcv
+    const equation = formattedLines.join(" + ");
+    msg = `${equation} = ${totalQty} ${totalQty === 1 ? "producto" : "productos"} Bs. ${fmt(t.ves)} = $${fmt(t.usd)} bcv`;
   }
 
-  msg += bankDetails;
+  if (discountApplied()) {
+    msg += `\n(Descuento 20% aplicado)`;
+  }
+
   return msg;
 }
 

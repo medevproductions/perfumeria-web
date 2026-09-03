@@ -559,25 +559,48 @@ function copPreview() {
 
 function sizeInfo(mode, sizeKey) {
   const presList = getPresentations();
-  return mode === "refill" ? REFILL_SIZES.find((r) => r.key === sizeKey) : presList.find((p) => p.key === sizeKey);
+  if (mode === "refill") {
+    // Si viene como clave tipo 'refill_50', parseamos los ml
+    let ml = 30;
+    if (typeof sizeKey === "number") {
+      ml = sizeKey;
+    } else if (typeof sizeKey === "string" && sizeKey.startsWith("refill_")) {
+      ml = parseInt(sizeKey.replace("refill_", ""), 10) || 30;
+    } else if (sizeKey === "refill35") {
+      ml = 35;
+    } else if (sizeKey === "refill30") {
+      ml = 30;
+    }
+    return { key: `refill_${ml}`, label: `${ml}ml`, ml };
+  }
+  return presList.find((p) => p.key === sizeKey);
 }
 
 function sizeLabel(mode, sizeKey) {
   const info = sizeInfo(mode, sizeKey);
   if (!info) return "";
-  return mode === "refill" ? `Recarga ${info.label}` : info.label;
+  return mode === "refill" ? `Recarga Refill ${info.label}` : info.label;
 }
 
 // Precios base
 function unitPriceVES(product, mode, sizeKey) {
-  const key = mode === "refill" ? "refill" : sizeKey;
+  if (mode === "refill") {
+    const info = sizeInfo(mode, sizeKey);
+    const ml = info ? info.ml : 30;
+    // Base de refill en configuración (precio por recarga base de 30ml o proporcional por ml)
+    const baseRefillVES = Number(state.config.precios.refill) || 8000;
+    // El precio de la recarga se calcula proporcionalmente según los ml (ej: base / 30 * ml)
+    const pricePerMl = baseRefillVES / 30;
+    return Math.round(pricePerMl * ml);
+  }
+
+  const key = sizeKey;
   if (product && product.precios) {
     if (Number(product.precios[key]) > 0) return Number(product.precios[key]);
     if ((key === "vidrio50" || key === "vidrio60") && Number(product.precios.vidrio5060) > 0) {
       return Number(product.precios.vidrio5060);
     }
   }
-  if (mode === "refill") return Number(state.config.precios.refill) || 0;
   if (Number(state.config.precios[sizeKey]) > 0) return Number(state.config.precios[sizeKey]);
   if ((sizeKey === "vidrio50" || sizeKey === "vidrio60") && Number(state.config.precios.vidrio5060) > 0) {
     return Number(state.config.precios.vidrio5060);
@@ -600,7 +623,7 @@ function hasCustomPrices(product) {
 function getSelection(productId) {
   const presList = getPresentations();
   const defaultKey = presList[0]?.key || "plastico35";
-  return state.selection[productId] || { mode: "envase", presKey: defaultKey, refillKey: REFILL_SIZES[0].key };
+  return state.selection[productId] || { mode: "envase", presKey: defaultKey, refillKey: "refill_30", refillMl: 30 };
 }
 
 function mlReservedForProduct(productId) {
@@ -914,7 +937,14 @@ function setSelPres(productId, presKey) {
 }
 
 function setSelRefillSize(productId, refillKey) {
-  state.selection[productId] = { ...getSelection(productId), refillKey, mode: "refill" };
+  const ml = parseInt(String(refillKey).replace("refill_", ""), 10) || 30;
+  state.selection[productId] = { ...getSelection(productId), refillKey: `refill_${ml}`, refillMl: ml, mode: "refill" };
+  render();
+}
+
+function setSelRefillMl(productId, mlVal) {
+  const ml = Math.max(10, Math.min(200, parseInt(mlVal, 10) || 30));
+  state.selection[productId] = { ...getSelection(productId), refillKey: `refill_${ml}`, refillMl: ml, mode: "refill" };
   render();
 }
 
@@ -1299,8 +1329,9 @@ function tpl_admin_precios() {
             <tr>
               <td>
                 <strong style="color:#ffffff;display:block">Recargas / Refills</strong>
+                <span style="font-size:11px;color:var(--accent-cyan)">Base 30ml (proporcional 10-200ml)</span>
               </td>
-              <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">30 - 35 ml</span></td>
+              <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">10 - 200 ml</span></td>
               <td>
                 <input id="precio-refill" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
               </td>
@@ -1589,14 +1620,30 @@ function tpl_product_card(p) {
       ${getPresentations().map((pr) => `
         <button class="perf-chip ${sel.mode === "envase" && sel.presKey === pr.key ? "active" : ""}" ${pr.ml > p.stockMl ? "disabled" : ""} data-action="select-pres" data-id="${p.id}" data-pres="${pr.key}">${pr.label}</button>
       `).join("")}
-      <button class="perf-chip ${sel.mode === "refill" ? "active" : ""}" data-action="select-refill-toggle" data-id="${p.id}">Recarga / Refill</button>
+      <button class="perf-chip ${sel.mode === "refill" ? "active" : ""}" data-action="select-refill-toggle" data-id="${p.id}">
+        <i data-lucide="droplet" size="13" style="margin-right:2px"></i> Recarga / Refill ${sel.mode === "refill" ? "▾" : ""}
+      </button>
     </div>
 
     ${sel.mode === "refill" ? `
-      <div class="perf-chiprow" style="margin-top:6px">
-        ${REFILL_SIZES.map((r) => `
-          <button class="perf-chip ${sel.refillKey === r.key ? "active" : ""}" ${r.ml > p.stockMl ? "disabled" : ""} data-action="select-refill-size" data-id="${p.id}" data-refill="${r.key}">${r.label}</button>
-        `).join("")}
+      <div class="perf-refill-dropdown-panel" style="margin-top:10px">
+        <div class="perf-refill-panel-header">
+          <span class="perf-refill-panel-title">Elige o escribe los mililitros a recargar (10 - 200 ml):</span>
+        </div>
+        <div class="perf-refill-controls-row">
+          <select class="perf-refill-select" data-action="change-refill-select" data-id="${p.id}">
+            <option value="" disabled selected>Opciones comunes...</option>
+            ${[10, 15, 20, 30, 35, 50, 60, 100, 120, 150, 200].map((mlOption) => `
+              <option value="${mlOption}" ${Number(sel.refillMl || 30) === mlOption ? "selected" : ""} ${mlOption > p.stockMl ? "disabled" : ""}>
+                ${mlOption} ml ${mlOption > p.stockMl ? "(Sin stock suficiente)" : ""}
+              </option>
+            `).join("")}
+          </select>
+          <div class="perf-refill-custom-input-wrap">
+            <input type="number" min="10" max="200" step="5" class="perf-refill-input" value="${sel.refillMl || 30}" data-action="input-refill-ml" data-id="${p.id}" title="Cantidad personalizada en ml" />
+            <span class="perf-refill-unit">ml</span>
+          </div>
+        </div>
       </div>` : ""}
 
     <div class="perf-scent-price-row" style="margin-top:10px">
@@ -2023,6 +2070,8 @@ document.addEventListener("DOMContentLoaded", () => {
       state.editingProd[el.dataset.field] = el.value;
     } else if (action === "input-editprod-price" && state.editingProd) {
       state.editingProd.precios[el.dataset.field] = el.value;
+    } else if (action === "input-refill-ml") {
+      setSelRefillMl(el.dataset.id, el.value);
     }
   });
 
@@ -2030,6 +2079,9 @@ document.addEventListener("DOMContentLoaded", () => {
     const el = e.target;
     if (el.dataset.action === "upload-image") handleImageFile(el.files && el.files[0]);
     if (el.dataset.action === "upload-edit-image") handleEditImageFile(el.files && el.files[0]);
+    if (el.dataset.action === "change-refill-select") {
+      setSelRefillMl(el.dataset.id, el.value);
+    }
     if (el.dataset.action === "input-newprod") {
       state.newProd[el.dataset.field] = el.value;
     }

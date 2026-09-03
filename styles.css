@@ -1204,6 +1204,81 @@ body{
 }
 .perf-chip:disabled{ opacity: 0.35; cursor: not-allowed; }
 
+/* Panel Desplegable de Recarga / Refill */
+.perf-refill-dropdown-panel{
+  background: rgba(15, 23, 42, 0.85);
+  border: 1.5px solid var(--accent-cyan);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  animation: fadeIn .2s ease;
+}
+.perf-refill-panel-header{
+  margin-bottom: 8px;
+}
+.perf-refill-panel-title{
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.perf-refill-controls-row{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.perf-refill-select{
+  flex: 1.4;
+  background: var(--navy-dark);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 7px 10px;
+  color: #ffffff;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.perf-refill-select:focus{
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.25);
+}
+.perf-refill-custom-input-wrap{
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.perf-refill-input{
+  width: 100%;
+  background: var(--navy-dark);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 7px 28px 7px 10px;
+  color: #ffffff;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13.5px;
+  font-weight: 700;
+  outline: none;
+  text-align: center;
+  transition: all .15s ease;
+}
+.perf-refill-input:focus{
+  border-color: var(--gold);
+  box-shadow: 0 0 0 2px rgba(229, 184, 105, 0.25);
+}
+.perf-refill-unit{
+  position: absolute;
+  right: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(248, 250, 252, 0.5);
+  pointer-events: none;
+}
+
 .perf-scent-price-row{
   display: flex;
   justify-content: space-between;

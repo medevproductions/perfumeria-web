@@ -579,7 +579,7 @@ function sizeInfo(mode, sizeKey) {
 function sizeLabel(mode, sizeKey) {
   const info = sizeInfo(mode, sizeKey);
   if (!info) return "";
-  return mode === "refill" ? `Recarga Refill ${info.label}` : info.label;
+  return mode === "refill" ? `Recarga ${info.label}` : info.label;
 }
 
 // Precios base
@@ -1328,10 +1328,10 @@ function tpl_admin_precios() {
             }).join("")}
             <tr>
               <td>
-                <strong style="color:#ffffff;display:block">Recargas / Refills</strong>
-                <span style="font-size:11px;color:var(--accent-cyan)">Base 30ml (proporcional 10-200ml)</span>
+                <strong style="color:#ffffff;display:block">Recargas</strong>
+                <span style="font-size:11px;color:var(--accent-cyan)">Base 30ml (30, 35, 50, 60, 100ml)</span>
               </td>
-              <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">10 - 200 ml</span></td>
+              <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">30 - 100 ml</span></td>
               <td>
                 <input id="precio-refill" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
               </td>
@@ -1621,28 +1621,32 @@ function tpl_product_card(p) {
         <button class="perf-chip ${sel.mode === "envase" && sel.presKey === pr.key ? "active" : ""}" ${pr.ml > p.stockMl ? "disabled" : ""} data-action="select-pres" data-id="${p.id}" data-pres="${pr.key}">${pr.label}</button>
       `).join("")}
       <button class="perf-chip ${sel.mode === "refill" ? "active" : ""}" data-action="select-refill-toggle" data-id="${p.id}">
-        <i data-lucide="droplet" size="13" style="margin-right:2px"></i> Recarga / Refill ${sel.mode === "refill" ? "▾" : ""}
+        <i data-lucide="droplet" size="13" style="margin-right:2px"></i> Recarga ${sel.mode === "refill" ? "▾" : ""}
       </button>
     </div>
 
     ${sel.mode === "refill" ? `
       <div class="perf-refill-dropdown-panel" style="margin-top:10px">
         <div class="perf-refill-panel-header">
-          <span class="perf-refill-panel-title">Elige o escribe los mililitros a recargar (10 - 200 ml):</span>
+          <span class="perf-refill-panel-title">Selecciona los mililitros para la recarga:</span>
         </div>
-        <div class="perf-refill-controls-row">
-          <select class="perf-refill-select" data-action="change-refill-select" data-id="${p.id}">
-            <option value="" disabled selected>Opciones comunes...</option>
-            ${[10, 15, 20, 30, 35, 50, 60, 100, 120, 150, 200].map((mlOption) => `
-              <option value="${mlOption}" ${Number(sel.refillMl || 30) === mlOption ? "selected" : ""} ${mlOption > p.stockMl ? "disabled" : ""}>
-                ${mlOption} ml ${mlOption > p.stockMl ? "(Sin stock suficiente)" : ""}
-              </option>
-            `).join("")}
-          </select>
-          <div class="perf-refill-custom-input-wrap">
-            <input type="number" min="10" max="200" step="5" class="perf-refill-input" value="${sel.refillMl || 30}" data-action="input-refill-ml" data-id="${p.id}" title="Cantidad personalizada en ml" />
-            <span class="perf-refill-unit">ml</span>
-          </div>
+        <div class="perf-refill-buttons-row">
+          ${[30, 35, 50, 60, 100].map((mlVal) => {
+            const isSel = Number(sel.refillMl || 30) === mlVal;
+            const noStock = mlVal > p.stockMl;
+            return `
+            <button 
+              type="button" 
+              class="perf-refill-btn ${isSel ? "active" : ""}" 
+              ${noStock ? "disabled" : ""} 
+              data-action="select-refill-ml" 
+              data-id="${p.id}" 
+              data-ml="${mlVal}"
+              title="${noStock ? "No hay suficiente stock en ml" : `Recargar ${mlVal} ml`}"
+            >
+              ${mlVal} ml
+            </button>`;
+          }).join("")}
         </div>
       </div>` : ""}
 
@@ -2007,6 +2011,9 @@ document.addEventListener("DOMContentLoaded", () => {
       }
       case "select-refill-size":
         setSelRefillSize(trigger.dataset.id, trigger.dataset.refill);
+        break;
+      case "select-refill-ml":
+        setSelRefillMl(trigger.dataset.id, trigger.dataset.ml);
         break;
       case "add-to-cart":
         addToCart(trigger.dataset.id);

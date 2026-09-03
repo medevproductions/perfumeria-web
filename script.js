@@ -1138,8 +1138,8 @@ function tpl_price_conversions(ves) {
       <span class="lbl">USDT</span>
       <span class="val">$${fmt(valBinance)}</span>
     </div>
-    <div class="perf-ref-pill venta" title="Referencia según tasa de venta con tus puntos agregados (${fmt(venta)} Bs.)">
-      <span class="lbl">Venta</span>
+    <div class="perf-ref-pill venta" title="Referencia según tasa personal con tus puntos agregados (${fmt(venta)} Bs.)">
+      <span class="lbl">Personal</span>
       <span class="val">$${fmt(valVenta)}</span>
     </div>
     <div class="perf-ref-pill cop" title="Referencia aproximada en Pesos Colombianos (COP)">

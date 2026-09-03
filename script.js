@@ -515,7 +515,17 @@ function tasaVenta() {
 
 function tasaBCV() {
   const bcv = Number(state.config.bcv) || 0;
-  return bcv > 0 ? bcv : 794.99;
+  return bcv > 0 ? bcv : 804.81;
+}
+
+function tasaBinanceRaw() {
+  const bin = Number(state.config.binance) || 0;
+  return bin > 0 ? bin : 978.04;
+}
+
+function tasaCOP() {
+  const cop = Number(state.config.cop) || 0;
+  return cop > 0 ? cop : 3152.83;
 }
 
 function copPreview() {
@@ -1107,13 +1117,48 @@ function tpl_admin_tasas() {
   </div>`;
 }
 
+function tpl_price_conversions(ves) {
+  const bcv = tasaBCV();
+  const binance = tasaBinanceRaw();
+  const venta = tasaVenta();
+  const copRate = tasaCOP();
+
+  const valBCV = bcv > 0 ? ves / bcv : 0;
+  const valBinance = binance > 0 ? ves / binance : 0;
+  const valVenta = venta > 0 ? ves / venta : 0;
+  const valCOP = valBCV > 0 && copRate > 0 ? valBCV * copRate : 0;
+
+  return `
+  <div class="perf-ref-grid">
+    <div class="perf-ref-pill bcv" title="Referencia según tasa oficial BCV (${fmt(bcv)} Bs.)">
+      <span class="lbl">BCV</span>
+      <span class="val">$${fmt(valBCV)}</span>
+    </div>
+    <div class="perf-ref-pill binance" title="Referencia según tasa Binance P2P base (${fmt(binance)} Bs.)">
+      <span class="lbl">USDT</span>
+      <span class="val">$${fmt(valBinance)}</span>
+    </div>
+    <div class="perf-ref-pill venta" title="Referencia según tasa de venta con tus puntos agregados (${fmt(venta)} Bs.)">
+      <span class="lbl">Venta</span>
+      <span class="val">$${fmt(valVenta)}</span>
+    </div>
+    <div class="perf-ref-pill cop" title="Referencia aproximada en Pesos Colombianos (COP)">
+      <span class="lbl">COP</span>
+      <span class="val">${fmt(valCOP, 0)}</span>
+    </div>
+  </div>`;
+}
+
 function tpl_admin_precios() {
   const bcv = tasaBCV();
+  const binance = tasaBinanceRaw();
+  const venta = tasaVenta();
+
   return `
   <div class="perf-section">
     <div class="perf-card">
       <div class="perf-card-title"><i data-lucide="tag" size="16"></i> Configuración de Precios por Presentación</div>
-      <div class="perf-card-hint">Edita los precios base en Bolívares (Bs.). El valor de referencia en dólares ($) se calcula automáticamente según la tasa oficial BCV (${fmt(bcv)} Bs.).</div>
+      <div class="perf-card-hint">Edita los precios base en Bolívares (Bs.). Las equivalencias en dólares y pesos colombianos se calculan automáticamente con las tasas vigentes.</div>
       
       <div class="perf-table-wrapper">
         <table class="perf-table">
@@ -1121,40 +1166,37 @@ function tpl_admin_precios() {
             <tr>
               <th>Presentación / Tipo</th>
               <th>Mililitros</th>
-              <th style="min-width:140px">Precio Base (Bs.)</th>
-              <th>Referencia USD</th>
+              <th style="min-width:130px">Precio Base (Bs.)</th>
+              <th style="min-width:180px">Referencias Multi-Divisa</th>
             </tr>
           </thead>
           <tbody>
             ${PRESENTATIONS.map((p) => {
               const vesVal = Number(state.config.precios[p.key]) || 0;
-              const usdVal = bcv > 0 ? vesVal / bcv : 0;
               return `
               <tr>
                 <td>
-                  <strong style="color:#ffffff">${p.label}</strong>
+                  <strong style="color:#ffffff;display:block">${p.label}</strong>
                 </td>
                 <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">${p.ml} ml</span></td>
                 <td>
                   <input id="precio-${p.key}" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios[p.key])}" data-action="input-precio" data-field="${p.key}" />
                 </td>
                 <td>
-                  <span style="font-family:'IBM Plex Mono',monospace;color:var(--gold-soft);font-size:12.5px">≈ $${fmt(usdVal)}</span>
-                  <span class="perf-bcv-badge">BCV</span>
+                  ${tpl_price_conversions(vesVal)}
                 </td>
               </tr>`;
             }).join("")}
             <tr>
               <td>
-                <strong style="color:#ffffff">Recargas / Refills (30ml y 35ml)</strong>
+                <strong style="color:#ffffff;display:block">Recargas / Refills</strong>
               </td>
               <td><span style="font-family:'IBM Plex Mono',monospace;color:rgba(248,250,252,0.75)">30 - 35 ml</span></td>
               <td>
                 <input id="precio-refill" class="perf-table-input" inputmode="decimal" placeholder="Bs." value="${esc(state.config.precios.refill)}" data-action="input-precio" data-field="refill" />
               </td>
               <td>
-                <span style="font-family:'IBM Plex Mono',monospace;color:var(--gold-soft);font-size:12.5px">≈ $${fmt(Number(state.config.precios.refill) / bcv)}</span>
-                <span class="perf-bcv-badge">BCV</span>
+                ${tpl_price_conversions(Number(state.config.precios.refill) || 0)}
               </td>
             </tr>
           </tbody>

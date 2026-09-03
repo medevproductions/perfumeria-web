@@ -830,6 +830,80 @@ body{
   box-shadow: 0 0 0 2px rgba(229, 184, 105, 0.2);
 }
 
+/* Pills de Conversión de Precios en Admin (Ultra-compacto para Móvil y PC) */
+.perf-ref-grid{
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-width: 260px;
+}
+.perf-ref-pill{
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.85);
+  white-space: nowrap;
+}
+.perf-ref-pill .lbl{
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-weight: 800;
+}
+.perf-ref-pill.bcv{
+  border-color: rgba(56, 189, 248, 0.35);
+}
+.perf-ref-pill.bcv .lbl{
+  background: rgba(56, 189, 248, 0.2);
+  color: var(--accent-cyan);
+}
+.perf-ref-pill.bcv .val{
+  color: #ffffff;
+}
+
+.perf-ref-pill.binance{
+  border-color: rgba(234, 179, 8, 0.35);
+}
+.perf-ref-pill.binance .lbl{
+  background: rgba(234, 179, 8, 0.2);
+  color: #facc15;
+}
+.perf-ref-pill.binance .val{
+  color: #fef08a;
+}
+
+.perf-ref-pill.venta{
+  border-color: rgba(229, 184, 105, 0.45);
+  background: rgba(229, 184, 105, 0.1);
+}
+.perf-ref-pill.venta .lbl{
+  background: var(--gold);
+  color: #0b111e;
+}
+.perf-ref-pill.venta .val{
+  color: var(--gold-soft);
+}
+
+.perf-ref-pill.cop{
+  border-color: rgba(74, 222, 128, 0.35);
+}
+.perf-ref-pill.cop .lbl{
+  background: rgba(74, 222, 128, 0.2);
+  color: var(--ok);
+}
+.perf-ref-pill.cop .val{
+  color: #bbf7d0;
+}
+
 /* Inventario Admin */
 .perf-prodlist{
   display: flex;

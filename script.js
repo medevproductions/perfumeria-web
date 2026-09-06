@@ -1452,7 +1452,7 @@ function tpl_admin_tasas() {
         <div class="perf-syncbar-title"><i data-lucide="refresh-cw" class="${state.syncingRates ? "perf-spin" : ""}" size="14"></i> Consulta Automática de Tasas</div>
         <div class="perf-syncbar-time">Sincronizado: ${formatRateTimestamp(state.config.last_rates_update)}</div>
       </div>
-      <button class="perf-btn gold sm" data-action="sync-rates" ${state.syncingRates ? "disabled" : ""} title="Consultar BCV, Binance y Google COP en vivo">
+      <button class="perf-btn gold sm" data-action="sync-rates" ${state.syncingRates ? "disabled" : ""} title="Consultar BCV Oficial y Binance P2P (VES y COP) en vivo">
         <i data-lucide="refresh-cw" class="${state.syncingRates ? "perf-spin" : ""}" size="13"></i>
         ${state.syncingRates ? "Consultando..." : "Actualizar en vivo"}
       </button>
@@ -1502,7 +1502,8 @@ function tpl_admin_tasas() {
         </label>
         <input id="cfg-cop" class="perf-input" inputmode="decimal" placeholder="Ej: 3115.00" value="${esc(state.config.cop)}" data-action="input-config" data-field="cop" />
       </div>
-      ${cp ? `<div class="perf-card-hint" style="margin:0">1.000 COP ≈ $${fmt(cp.usd, 4)} USD${cp.ves != null ? ` ≈ Bs. ${fmt(cp.ves)}` : ""}</div>` : ""}
+      <div class="perf-card-hint" style="margin:6px 0 0">Calculada en tiempo real mediante Binance P2P (Bancolombia y Nequi), filtrando anuncios con precios atípicos o inflados.</div>
+      ${cp ? `<div class="perf-card-hint" style="margin:6px 0 0">1.000 COP ≈ $${fmt(cp.usd, 4)} USD${cp.ves != null ? ` ≈ Bs. ${fmt(cp.ves)}` : ""}</div>` : ""}
     </div>
   </div>`;
 }

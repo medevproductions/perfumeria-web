@@ -329,7 +329,20 @@ async function syncLiveRates(silent = false) {
       }
     } catch (eApi) {}
 
-    // 2. Si no se obtuvo BCV, consultar DolarApi oficial
+    // 2. Si no se obtuvo BCV, consultar open.er-api.com (actualizado diariamente)
+    if (!bcvVal) {
+      try {
+        const resEr = await fetch("https://open.er-api.com/v6/latest/USD");
+        if (resEr.ok) {
+          const d = await resEr.json();
+          if (d && d.rates && d.rates.VES && Number(d.rates.VES) > 100) {
+            bcvVal = String(Number(d.rates.VES).toFixed(2));
+          }
+        }
+      } catch (eEr) {}
+    }
+
+    // 3. Fallback de BCV: DolarApi oficial
     if (!bcvVal) {
       try {
         const resBcv = await fetch("https://ve.dolarapi.com/v1/dolares/oficial");
@@ -340,7 +353,19 @@ async function syncLiveRates(silent = false) {
       } catch (eBcv) {}
     }
 
-    // 3. Si no se obtuvo Binance, consultar DolarApi paralelo
+    // 4. Si no se obtuvo Binance, consultar CriptoYa (Binance P2P VES en vivo)
+    if (!binanceVal) {
+      try {
+        const resCripto = await fetch("https://criptoya.com/api/binancep2p/usdt/ves");
+        if (resCripto.ok) {
+          const d = await resCripto.json();
+          const p = d.bid || d.ask;
+          if (p && Number(p) > 100) binanceVal = String(Number(p).toFixed(2));
+        }
+      } catch (eCrip) {}
+    }
+
+    // 5. Fallback de Binance: DolarApi paralelo
     if (!binanceVal) {
       try {
         const resParalelo = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo");
@@ -351,7 +376,7 @@ async function syncLiveRates(silent = false) {
       } catch (eBin) {}
     }
 
-    // 4. Si no se obtuvo COP, consultar exchange rate API
+    // 6. Si no se obtuvo COP, consultar exchange rate API
     if (!copVal) {
       try {
         const resCop = await fetch("https://open.er-api.com/v6/latest/USD");

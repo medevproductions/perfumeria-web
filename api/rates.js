@@ -5,6 +5,9 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -46,7 +49,20 @@ export default async function handler(req, res) {
     console.error("Error scraping bcv.org.ve:", e);
   }
 
-  // Fallback para BCV si el portal estatal está caído
+  // Fallback 1 para BCV si el portal estatal está caído: open.er-api.com (actualizado a diario)
+  if (!bcv) {
+    try {
+      const resEr = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });
+      if (resEr.ok) {
+        const erData = await resEr.json();
+        if (erData && erData.rates && erData.rates.VES && Number(erData.rates.VES) > 100) {
+          bcv = String(Number(erData.rates.VES).toFixed(2));
+        }
+      }
+    } catch (eEr) {}
+  }
+
+  // Fallback 2 para BCV: DolarApi oficial
   if (!bcv) {
     try {
       const resBcv = await fetch("https://ve.dolarapi.com/v1/dolares/oficial", { cache: "no-store" });
@@ -100,7 +116,24 @@ export default async function handler(req, res) {
     console.error("Error fetching Binance P2P directly:", e);
   }
 
-  // Fallback a DolarApi paralelo para Binance si falla
+  // Fallback 1 para Binance P2P: CriptoYa (Binance P2P VES)
+  if (!binance) {
+    try {
+      const resCripto = await fetch("https://criptoya.com/api/binancep2p/usdt/ves", {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        cache: "no-store"
+      });
+      if (resCripto.ok) {
+        const cData = await resCripto.json();
+        const p = cData.bid || cData.ask;
+        if (p && Number(p) > 100) {
+          binance = String(Number(p).toFixed(2));
+        }
+      }
+    } catch (eCripto) {}
+  }
+
+  // Fallback 2 a DolarApi paralelo para Binance si falla
   if (!binance) {
     try {
       const resParalelo = await fetch("https://ve.dolarapi.com/v1/dolares/paralelo", { cache: "no-store" });

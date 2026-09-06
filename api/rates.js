@@ -146,18 +146,87 @@ export default async function handler(req, res) {
     } catch (e2) {}
   }
 
-  // 3. Obtener COP en vivo directo de Google Finance / Yahoo Finance
+  // 3. Obtener COP (Pesos Colombianos) en vivo directamente desde Binance P2P (Bancolombia / Nequi)
+  // Filtrando anuncios atípicos o con precios inflados/exagerados
   try {
-    const resYahoo = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/COP=X", { cache: "no-store" });
-    if (resYahoo.ok) {
-      const yData = await resYahoo.json();
-      const price = yData?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      if (price && Number(price) > 1000) {
-        cop = String(Number(price).toFixed(2));
+    const copPayload = {
+      asset: "USDT",
+      fiat: "COP",
+      merchantCheck: false,
+      page: 1,
+      payTypes: ["Bancolombia", "Nequi"],
+      publisherType: null,
+      rows: 20,
+      tradeType: "BUY",
+    };
+
+    const resBinanceCop = await fetch("https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+      body: JSON.stringify(copPayload),
+      cache: "no-store",
+    });
+
+    if (resBinanceCop.ok) {
+      const cData = await resBinanceCop.json();
+      if (cData && cData.data && Array.isArray(cData.data) && cData.data.length > 0) {
+        let prices = cData.data
+          .map((item) => parseFloat(item.adv && item.adv.price))
+          .filter((p) => !isNaN(p) && p > 1000)
+          .sort((a, b) => a - b);
+
+        if (prices.length > 0) {
+          // Filtrado anti-outliers: descartar extremos (anuncios inflados o muy por encima de la media)
+          let validPrices = prices;
+          if (prices.length >= 6) {
+            const start = Math.floor(prices.length * 0.15);
+            const end = Math.ceil(prices.length * 0.85);
+            validPrices = prices.slice(start, end);
+          }
+          const avg = validPrices.reduce((a, b) => a + b, 0) / validPrices.length;
+          cop = String(avg.toFixed(2));
+        }
       }
     }
-  } catch (e) {}
+  } catch (eCopBin) {
+    console.error("Error fetching Binance COP P2P:", eCopBin);
+  }
 
+  // Fallback 1 para COP: CriptoYa Binance P2P COP
+  if (!cop) {
+    try {
+      const resCriptoCop = await fetch("https://criptoya.com/api/binancep2p/usdt/cop", {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        cache: "no-store"
+      });
+      if (resCriptoCop.ok) {
+        const cData = await resCriptoCop.json();
+        const p = cData.bid || cData.ask;
+        if (p && Number(p) > 1000) {
+          cop = String(Number(p).toFixed(2));
+        }
+      }
+    } catch (eCriptoCop) {}
+  }
+
+  // Fallback 2 para COP: Yahoo Finance
+  if (!cop) {
+    try {
+      const resYahoo = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/COP=X", { cache: "no-store" });
+      if (resYahoo.ok) {
+        const yData = await resYahoo.json();
+        const price = yData?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (price && Number(price) > 1000) {
+          cop = String(Number(price).toFixed(2));
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Fallback 3 para COP: Google Finance
   if (!cop) {
     try {
       const resGoogle = await fetch("https://www.google.com/search?q=1+USD+to+COP&hl=es", {
@@ -174,6 +243,7 @@ export default async function handler(req, res) {
     } catch (e) {}
   }
 
+  // Fallback 4 para COP: Open Exchange Rates API
   if (!cop) {
     try {
       const resCop = await fetch("https://open.er-api.com/v6/latest/USD", { cache: "no-store" });

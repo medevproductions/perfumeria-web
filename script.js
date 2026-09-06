@@ -376,7 +376,19 @@ async function syncLiveRates(silent = false) {
       } catch (eBin) {}
     }
 
-    // 6. Si no se obtuvo COP, consultar exchange rate API
+    // 6. Obtener COP en vivo desde Binance P2P (CriptoYa)
+    if (!copVal) {
+      try {
+        const resCriptoCop = await fetch("https://criptoya.com/api/binancep2p/usdt/cop");
+        if (resCriptoCop.ok) {
+          const d = await resCriptoCop.json();
+          const p = d.bid || d.ask;
+          if (p && Number(p) > 1000) copVal = String(Number(p).toFixed(2));
+        }
+      } catch (eCopCrip) {}
+    }
+
+    // 7. Fallback secundario de COP si falla P2P: exchange rate API
     if (!copVal) {
       try {
         const resCop = await fetch("https://open.er-api.com/v6/latest/USD");
@@ -1485,10 +1497,10 @@ function tpl_admin_tasas() {
       <div class="perf-card-title"><i data-lucide="landmark" size="16"></i> Tasa COP (Pesos Colombianos)</div>
       <div class="perf-field">
         <label class="perf-label">
-          <span>Tasa COP (USD a Pesos - Google)</span>
-          <span class="perf-badge-live">Google Finance</span>
+          <span>Tasa COP (USDT a Pesos - Binance P2P)</span>
+          <span class="perf-badge-live">P2P Binance</span>
         </label>
-        <input id="cfg-cop" class="perf-input" inputmode="decimal" placeholder="Ej: 3169.59" value="${esc(state.config.cop)}" data-action="input-config" data-field="cop" />
+        <input id="cfg-cop" class="perf-input" inputmode="decimal" placeholder="Ej: 3115.00" value="${esc(state.config.cop)}" data-action="input-config" data-field="cop" />
       </div>
       ${cp ? `<div class="perf-card-hint" style="margin:0">1.000 COP ≈ $${fmt(cp.usd, 4)} USD${cp.ves != null ? ` ≈ Bs. ${fmt(cp.ves)}` : ""}</div>` : ""}
     </div>
